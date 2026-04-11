@@ -1,0 +1,38 @@
+# Build directories
+/build/
+/build-cli/
+/out/
+/bin/
+/obj/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+_deps/
+
+# Visual Studio files
+.vs/
+*.vcxproj.user
+*.user
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Binaries and debug artifacts
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.exe
+*.exp
+*.pdb
+*.ilk
+*.log
+*.tmp
