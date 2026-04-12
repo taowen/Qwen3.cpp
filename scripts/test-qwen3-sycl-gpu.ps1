@@ -7,6 +7,8 @@ param(
     [string]$Exe = "",
     [string]$BaselineFile = "",
     [string]$OneApiSetvars = "C:\Progra~2\Intel\oneAPI\setvars.bat",
+    [ValidateSet("on", "off")]
+    [string]$Graph = "on",
     [int]$TimeoutSec = 300,
     [string]$OutDir = "",
     [switch]$KeepLogs
@@ -88,6 +90,9 @@ function Get-NormalizedText {
     $text = Get-Content -LiteralPath $Path -Raw
     $text = $text -replace "`r`n", "`n"
     $text = $text -replace "`r", "`n"
+    # oneMKL may print runtime warnings to stdout depending on driver/runtime.
+    # They are not model output and should not affect determinism/baseline checks.
+    $text = $text -replace "(?m)^MKL Warning:.*`n?", ""
     return $text
 }
 
@@ -151,6 +156,11 @@ if ($TimeoutSec -lt 1) {
 }
 
 Import-OneApiEnvironment -SetvarsPath $OneApiSetvars
+if ($Graph -eq "on") {
+    $env:GGML_SYCL_DISABLE_GRAPH = "0"
+} else {
+    $env:GGML_SYCL_DISABLE_GRAPH = "1"
+}
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 
 $args = @(
@@ -165,6 +175,7 @@ Write-Host "Exe: $Exe"
 Write-Host "Model: $Model"
 Write-Host "NGpuLayers: $NGpuLayers"
 Write-Host "NPredict: $NPredict"
+Write-Host ("GGML_SYCL_DISABLE_GRAPH: {0}" -f $env:GGML_SYCL_DISABLE_GRAPH)
 Write-Host "BaselineFile: $BaselineFile"
 Write-Host "OutDir: $OutDir"
 

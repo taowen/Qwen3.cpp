@@ -6,6 +6,8 @@ param(
     [int]$NGpuLayers = 999,
     [string]$Exe = "C:\Apps\Qwen3.cpp\build-sycl-oneapi-ninja-icx\qwen3-cli.exe",
     [string]$OneApiSetvars = "C:\Progra~2\Intel\oneAPI\setvars.bat",
+    [ValidateSet("on", "off")]
+    [string]$Graph = "on",
     [int]$TimeoutSec = 300,
     [int]$TailLines = 120,
     [string]$LogPath = ""
@@ -60,6 +62,12 @@ if ($TailLines -lt 1) {
 
 Import-OneApiEnvironment -SetvarsPath $OneApiSetvars
 
+if ($Graph -eq "on") {
+    $env:GGML_SYCL_DISABLE_GRAPH = "0"
+} else {
+    $env:GGML_SYCL_DISABLE_GRAPH = "1"
+}
+
 $cliArgs = @(
     "-m", $Model,
     "-ngl", $NGpuLayers.ToString(),
@@ -71,6 +79,7 @@ Write-Host "Running SYCL GPU..."
 Write-Host "Model: $Model"
 Write-Host "NGpuLayers: $NGpuLayers"
 Write-Host "NPredict: $NPredict"
+Write-Host ("GGML_SYCL_DISABLE_GRAPH: {0}" -f $env:GGML_SYCL_DISABLE_GRAPH)
 Write-Host "TimeoutSec: $TimeoutSec"
 if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
     Write-Host "Log: $LogPath"
@@ -94,10 +103,10 @@ try {
         $outTail = @()
         $errTail = @()
         if (Test-Path -LiteralPath $stdoutPath) {
-            $outTail = @(Get-Content -LiteralPath $stdoutPath -Tail $TailLines)
+            $outTail = @(Get-Content -LiteralPath $stdoutPath -Encoding UTF8 -Tail $TailLines)
         }
         if (Test-Path -LiteralPath $stderrPath) {
-            $errTail = @(Get-Content -LiteralPath $stderrPath -Tail $TailLines)
+            $errTail = @(Get-Content -LiteralPath $stderrPath -Encoding UTF8 -Tail $TailLines)
         }
         if ($outTail.Count -gt 0) {
             Write-Host "---- stdout tail ($TailLines) ----"
@@ -110,14 +119,14 @@ try {
     } else {
         $combined = @()
         if (Test-Path -LiteralPath $stdoutPath) {
-            $combined += Get-Content -LiteralPath $stdoutPath
+            $combined += Get-Content -LiteralPath $stdoutPath -Encoding UTF8
         }
         if (Test-Path -LiteralPath $stderrPath) {
-            $combined += Get-Content -LiteralPath $stderrPath
+            $combined += Get-Content -LiteralPath $stderrPath -Encoding UTF8
         }
-        $combined | Set-Content -LiteralPath $LogPath
+        $combined | Set-Content -LiteralPath $LogPath -Encoding UTF8
         Write-Host "Log written to: $LogPath"
-        $tail = @(Get-Content -LiteralPath $LogPath -Tail $TailLines)
+        $tail = @(Get-Content -LiteralPath $LogPath -Encoding UTF8 -Tail $TailLines)
         if ($tail.Count -gt 0) {
             Write-Host "---- log tail ($TailLines) ----"
             $tail | ForEach-Object { Write-Host $_ }

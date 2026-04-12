@@ -9,6 +9,7 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 static void print_usage(const char * prog) {
@@ -36,6 +37,25 @@ static std::string utf8_from_wide(const wchar_t * wstr) {
     out.pop_back(); // remove trailing '\0'
     return out;
 }
+
+static std::vector<std::string> utf8_args_from_command_line() {
+    std::vector<std::string> out;
+
+    LPWSTR * wargv = nullptr;
+    int wargc = 0;
+    wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (wargv == nullptr || wargc <= 0) {
+        return out;
+    }
+
+    out.reserve(wargc);
+    for (int i = 0; i < wargc; ++i) {
+        out.push_back(utf8_from_wide(wargv[i]));
+    }
+
+    LocalFree(wargv);
+    return out;
+}
 #endif
 
 int main(int argc, char ** argv) {
@@ -45,13 +65,7 @@ int main(int argc, char ** argv) {
 #ifdef _WIN32
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
-
-    if (__wargv != nullptr && __argc > 0) {
-        args.reserve(__argc);
-        for (int i = 0; i < __argc; ++i) {
-            args.push_back(utf8_from_wide(__wargv[i]));
-        }
-    }
+    args = utf8_args_from_command_line();
 #endif
     if (args.empty()) {
         args.reserve(argc);
