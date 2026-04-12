@@ -150,5 +150,7 @@ void ggml_compute_forward_mul(const ggml_compute_params * params, ggml_tensor * 
 }
 
 void ggml_compute_forward_div(const ggml_compute_params * params, ggml_tensor * dst) {
-    binary_op<op_div>(params, dst);
+    GGML_UNUSED(params);
+    GGML_UNUSED(dst);
+    GGML_ABORT("%s: GGML_OP_DIV is trimmed in qwen3-cpp", __func__);
 }

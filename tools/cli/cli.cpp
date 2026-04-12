@@ -2,64 +2,157 @@
 #include <clocale>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-static void print_usage(int, char ** argv) {
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+static void print_usage(const char * prog) {
     printf("\nexample usage:\n");
-    printf("\n    %s -m model.gguf [-n n_predict] [prompt]\n", argv[0]);
+    printf("\n    %s -m model.gguf [-n n_predict] [-p prompt] [-t temperature] [prompt]\n", prog);
     printf("\n");
 }
 
+#ifdef _WIN32
+static std::string utf8_from_wide(const wchar_t * wstr) {
+    if (wstr == nullptr) {
+        return {};
+    }
+
+    const int size = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 0) {
+        return {};
+    }
+
+    std::string out(size, '\0');
+    if (WideCharToMultiByte(CP_UTF8, 0, wstr, -1, out.data(), size, nullptr, nullptr) <= 0) {
+        return {};
+    }
+
+    out.pop_back(); // remove trailing '\0'
+    return out;
+}
+#endif
+
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
+
+    std::vector<std::string> args;
+#ifdef _WIN32
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
+
+    if (__wargv != nullptr && __argc > 0) {
+        args.reserve(__argc);
+        for (int i = 0; i < __argc; ++i) {
+            args.push_back(utf8_from_wide(__wargv[i]));
+        }
+    }
+#endif
+    if (args.empty()) {
+        args.reserve(argc);
+        for (int i = 0; i < argc; ++i) {
+            args.emplace_back(argv[i]);
+        }
+    }
+
+    const int argc_u = static_cast<int>(args.size());
 
     // path to the model gguf file
     std::string model_path;
     // prompt to generate text from
     std::string prompt = "Hello my name is";
+    bool prompt_set = false;
     // number of tokens to predict
     int n_predict = 32;
+    // sampling temperature (<= 0 means greedy)
+    float temperature = 0.0f;
 
     // parse command line arguments
     {
         int i = 1;
-        for (; i < argc; i++) {
-            if (strcmp(argv[i], "-m") == 0) {
-                if (i + 1 < argc) {
-                    model_path = argv[++i];
+        for (; i < argc_u; i++) {
+            const std::string & arg = args[i];
+            if (arg == "-m" || arg == "--model") {
+                if (i + 1 < argc_u) {
+                    model_path = args[++i];
                 } else {
-                    print_usage(argc, argv);
+                    print_usage(args[0].c_str());
                     return 1;
                 }
-            } else if (strcmp(argv[i], "-n") == 0) {
-                if (i + 1 < argc) {
+            } else if (arg == "-n" || arg == "--n-predict") {
+                if (i + 1 < argc_u) {
                     try {
-                        n_predict = std::stoi(argv[++i]);
+                        n_predict = std::stoi(args[++i]);
                     } catch (...) {
-                        print_usage(argc, argv);
+                        print_usage(args[0].c_str());
                         return 1;
                     }
                 } else {
-                    print_usage(argc, argv);
+                    print_usage(args[0].c_str());
                     return 1;
                 }
+            } else if (arg == "-p" || arg == "--prompt") {
+                if (i + 1 < argc_u) {
+                    prompt = args[++i];
+                    prompt_set = true;
+                } else {
+                    print_usage(args[0].c_str());
+                    return 1;
+                }
+            } else if (arg == "-t" || arg == "--temp" || arg == "--temperature") {
+                if (i + 1 < argc_u) {
+                    try {
+                        temperature = std::stof(args[++i]);
+                    } catch (...) {
+                        print_usage(args[0].c_str());
+                        return 1;
+                    }
+                } else {
+                    print_usage(args[0].c_str());
+                    return 1;
+                }
+            } else if (arg == "-h" || arg == "--help") {
+                print_usage(args[0].c_str());
+                return 0;
+            } else if (!arg.empty() && arg[0] == '-') {
+                fprintf(stderr, "unknown argument: %s\n", arg.c_str());
+                print_usage(args[0].c_str());
+                return 1;
             } else {
-                // prompt starts here
+                // positional prompt starts here
+                prompt = arg;
+                prompt_set = true;
+                for (++i; i < argc_u; i++) {
+                    prompt += " ";
+                    prompt += args[i];
+                }
                 break;
             }
         }
         if (model_path.empty()) {
-            print_usage(argc, argv);
+            print_usage(args[0].c_str());
             return 1;
         }
-        if (i < argc) {
-            prompt = argv[i++];
-            for (; i < argc; i++) {
-                prompt += " ";
-                prompt += argv[i];
-            }
+        if (!prompt_set) {
+            prompt = "Hello my name is";
         }
+        if (n_predict < 1) {
+            fprintf(stderr, "n_predict must be >= 1\n");
+            return 1;
+        }
+    if (temperature < 0.0f) {
+        fprintf(stderr, "temperature must be >= 0\n");
+        return 1;
+    }
+    if (temperature > 0.0f) {
+        fprintf(stderr, "temperature sampling is not available in this minimal build\n");
+        return 1;
+    }
     }
 
     // load dynamic backends

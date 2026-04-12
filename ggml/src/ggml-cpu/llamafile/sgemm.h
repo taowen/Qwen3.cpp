@@ -1,25 +1,6 @@
-#pragma once
-#include <stdint.h>
-#include <stdbool.h>
-
-#if defined(__VXE__) || defined(__VXE2__)
-#include <vecintrin.h>
-#endif
-
-#ifdef _MSC_VER
-#define NOINLINE __declspec(noinline)
-#else
-#define NOINLINE __attribute__((__noinline__))
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t, int64_t, int64_t,
-                     const void *, int64_t, const void *, int64_t, void *, int64_t,
-                     int, int, int);
-
-#ifdef __cplusplus
-}
-#endif
+﻿// SKELETON ONLY - no implementation copied yet.
+// SOURCE: ggml/src/ggml-cpu/llamafile/sgemm.h
+// USED_BY_QWEN3_MINIMAL: YES
+// TAG: KEEP_CPU
+// NOTE: CPU backend path (trim internally by op/arch requirements).
+// RULE: strict line-by-line transplant only; no invented algorithms.

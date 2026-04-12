@@ -523,34 +523,6 @@ ggml_tensor * llm_graph_context::build_lora_mm(
     return res;
 }
 
-ggml_tensor * llm_graph_context::build_lora_mm_id(
-          ggml_tensor * w,   // ggml_tensor * as
-          ggml_tensor * cur, // ggml_tensor * b
-          ggml_tensor * ids) const {
-    ggml_tensor * res = ggml_mul_mat_id(ctx0, w, cur, ids);
-    for (const auto & lora : *loras) {
-        llama_adapter_lora_weight * lw = lora.first->get_weight(w);
-        if (lw == nullptr) {
-            continue;
-        }
-
-        const float alpha = lora.first->alpha;
-        const float rank  = (float) lw->b->ne[0];
-        const float scale = alpha ? lora.second * alpha / rank : lora.second;
-
-        ggml_tensor * ab_cur = ggml_mul_mat_id(
-                ctx0, lw->b,
-                ggml_mul_mat_id(ctx0, lw->a, cur, ids),
-                ids
-                );
-
-        ab_cur = ggml_scale(ctx0, ab_cur, scale);
-        res = ggml_add(ctx0, res, ab_cur);
-    }
-
-    return res;
-}
-
 ggml_tensor * llm_graph_context::build_norm(
          ggml_tensor * cur,
          ggml_tensor * mw,
@@ -637,64 +609,21 @@ ggml_tensor * llm_graph_context::build_ffn(
         cur = tmp;
     }
 
-    switch (type_op) {
-        case LLM_FFN_SILU:
-            if (gate && type_gate == LLM_FFN_PAR) {
+    // qwen3-cpp: keep only the FFN path used by Qwen3 models (SILU gate).
+    // This is a strict branch pruning of upstream logic, not a new algorithm.
+    GGML_UNUSED(act_scales);
 
-                cur = ggml_swiglu_split(ctx0, cur, tmp);
-                cb(cur, "ffn_swiglu", il);
-                type_gate = LLM_FFN_SEQ;
-            } else {
-                cur = ggml_silu(ctx0, cur);
-                cb(cur, "ffn_silu", il);
-            } break;
-        case LLM_FFN_GELU:
-            if (gate && type_gate == LLM_FFN_PAR) {
-                cur = ggml_geglu_split(ctx0, cur, tmp);
-                cb(cur, "ffn_geglu", il);
-                type_gate = LLM_FFN_SEQ;
-            } else {
-                cur = ggml_gelu(ctx0, cur);
-                cb(cur, "ffn_gelu", il);
-                if (act_scales != NULL) {
-                    cur = ggml_div(ctx0, cur, act_scales);
-                    cb(cur, "ffn_act", il);
-                }
-            } break;
-        case LLM_FFN_RELU:
-            if (gate && type_gate == LLM_FFN_PAR) {
-                cur = ggml_reglu_split(ctx0, cur, tmp);
-                cb(cur, "ffn_reglu", il);
-                type_gate = LLM_FFN_SEQ;
-            } else {
-                cur = ggml_relu(ctx0, cur);
-                cb(cur, "ffn_relu", il);
-            } break;
-        case LLM_FFN_RELU_SQR:
-            {
-                cur = ggml_relu(ctx0, cur);
-                cb(cur, "ffn_relu", il);
+    if (type_op != LLM_FFN_SILU) {
+        GGML_ABORT("unsupported ffn op for qwen3-cpp");
+    }
 
-                cur = ggml_sqr(ctx0, cur);
-                cb(cur, "ffn_sqr(relu)", il);
-            } break;
-        case LLM_FFN_SWIGLU:
-            {
-                cur = ggml_swiglu(ctx0, cur);
-                cb(cur, "ffn_swiglu", il);
-            } break;
-        case LLM_FFN_GEGLU:
-            {
-                cur = ggml_geglu(ctx0, cur);
-                cb(cur, "ffn_geglu", il);
-            } break;
-        case LLM_FFN_REGLU:
-            {
-                cur = ggml_reglu(ctx0, cur);
-                cb(cur, "ffn_reglu", il);
-            } break;
-        default:
-            GGML_ABORT("fatal error");
+    if (gate && type_gate == LLM_FFN_PAR) {
+        cur = ggml_swiglu_split(ctx0, cur, tmp);
+        cb(cur, "ffn_swiglu", il);
+        type_gate = LLM_FFN_SEQ;
+    } else {
+        cur = ggml_silu(ctx0, cur);
+        cb(cur, "ffn_silu", il);
     }
 
     if (gate && type_gate == LLM_FFN_PAR) {

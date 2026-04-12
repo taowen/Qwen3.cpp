@@ -1,10 +1,6 @@
-#pragma once
-#include "common.h"
-
-size_t ggml_backend_amx_desired_wsize(const struct ggml_tensor * dst);
-
-size_t ggml_backend_amx_get_alloc_size(const struct ggml_tensor * tensor);
-
-void ggml_backend_amx_convert_weight(struct ggml_tensor * tensor, const void * data, size_t offset, size_t size);
-
-void ggml_backend_amx_mul_mat(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+﻿// SKELETON ONLY - no implementation copied yet.
+// SOURCE: ggml/src/ggml-cpu/amx/mmq.h
+// USED_BY_QWEN3_MINIMAL: YES
+// TAG: KEEP_CPU
+// NOTE: CPU backend path (trim internally by op/arch requirements).
+// RULE: strict line-by-line transplant only; no invented algorithms.

@@ -1,17 +1,6 @@
-// SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
-// SPDX-License-Identifier: MIT
-//
-
-#pragma once
-
-#include "ggml-alloc.h"
-
-#ifdef  __cplusplus
-extern "C" {
-#endif
-
-ggml_backend_buffer_type_t ggml_backend_cpu_kleidiai_buffer_type(void);
-
-#ifdef  __cplusplus
-}
-#endif
+﻿// SKELETON ONLY - no implementation copied yet.
+// SOURCE: ggml/src/ggml-cpu/kleidiai/kleidiai.h
+// USED_BY_QWEN3_MINIMAL: YES
+// TAG: KEEP_CPU
+// NOTE: CPU backend path (trim internally by op/arch requirements).
+// RULE: strict line-by-line transplant only; no invented algorithms.

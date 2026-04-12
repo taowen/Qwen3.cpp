@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(QWEN3_CPP_BUILD_CLI "Build minimal qwen3 CLI" OFF)
 
 if (NOT TARGET ggml)
-    add_subdirectory(../ggml ggml)
+    add_subdirectory(ggml)
 endif()
 
 add_subdirectory(src)

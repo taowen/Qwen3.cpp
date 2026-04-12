@@ -439,6 +439,14 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
     }
 
     switch (op->op) {
+        case GGML_OP_ADD:
+        case GGML_OP_GET_ROWS:
+        case GGML_OP_RMS_NORM:
+        case GGML_OP_MUL:
+        case GGML_OP_ROPE:
+        case GGML_OP_FLASH_ATTN_EXT:
+        case GGML_OP_GLU:
+            return true;
         case GGML_OP_CPY:
         case GGML_OP_SET_ROWS:
             return
@@ -461,15 +469,13 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
 
             return max_bias == 0.0f;
         }
-        case GGML_OP_IM2COL_BACK:
-            return src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_F32;
         case GGML_OP_GET_ROWS_BACK:
             return src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_F16;
         case GGML_OP_OUT_PROD:
             return (src0->type == GGML_TYPE_F32 || (ggml_is_quantized(src0->type) && src0->ne[2] == src1->ne[2] && src0->ne[3] == src1->ne[3])) &&
                 src1->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
         default:
-            return true;
+            return false;
     }
 }
 

@@ -1,8 +1,6 @@
-#include "ggml-backend.h"
-#include "ggml-cpu-impl.h"
-
-// GGML internal header
-
-#if defined(__AMX_INT8__) && defined(__AVX512VNNI__)
-ggml_backend_buffer_type_t ggml_backend_amx_buffer_type(void);
-#endif
+﻿// SKELETON ONLY - no implementation copied yet.
+// SOURCE: ggml/src/ggml-cpu/amx/amx.h
+// USED_BY_QWEN3_MINIMAL: YES
+// TAG: KEEP_CPU
+// NOTE: CPU backend path (trim internally by op/arch requirements).
+// RULE: strict line-by-line transplant only; no invented algorithms.
