@@ -1,5 +1,6 @@
-﻿#include "ggml-impl.h"
+#include "ggml-impl.h"
 #include "ggml-quants.h"
+#include "ggml-threading.h"
 
 #include <time.h>
 
@@ -872,14 +873,14 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "x*y",
     "x/y",
     "x^2",
-    "鈭歺",
+    "閳",
     "log(x)",
     "sin(x)",
     "cos(x)",
-    "危x",
-    "危x_k",
+    "鍗眡",
+    "鍗眡_k",
     "cumsum(x)",
-    "危x/n",
+    "鍗眡/n",
     "argmax(x)",
     "count_equal(x)",
     "repeat(x)",

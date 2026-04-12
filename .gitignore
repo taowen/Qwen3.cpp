@@ -3,6 +3,7 @@
 /build-cli/
 /build-min/
 /build-cli-fresh/
+/build-sycl-*/
 /out/
 /bin/
 /obj/

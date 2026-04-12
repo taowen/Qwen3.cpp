@@ -13,7 +13,7 @@
 
 static void print_usage(const char * prog) {
     printf("\nexample usage:\n");
-    printf("\n    %s -m model.gguf [-n n_predict] [-p prompt] [-t temperature] [prompt]\n", prog);
+    printf("\n    %s -m model.gguf [-n n_predict] [-ngl n_gpu_layers] [-p prompt] [-t temperature] [prompt]\n", prog);
     printf("\n");
 }
 
@@ -69,6 +69,8 @@ int main(int argc, char ** argv) {
     bool prompt_set = false;
     // number of tokens to predict
     int n_predict = 32;
+    // number of model layers to offload to GPU (-1 = use default policy)
+    int n_gpu_layers = -1;
     // sampling temperature (<= 0 means greedy)
     float temperature = 0.0f;
 
@@ -88,6 +90,18 @@ int main(int argc, char ** argv) {
                 if (i + 1 < argc_u) {
                     try {
                         n_predict = std::stoi(args[++i]);
+                    } catch (...) {
+                        print_usage(args[0].c_str());
+                        return 1;
+                    }
+                } else {
+                    print_usage(args[0].c_str());
+                    return 1;
+                }
+            } else if (arg == "-ngl" || arg == "--n-gpu-layers") {
+                if (i + 1 < argc_u) {
+                    try {
+                        n_gpu_layers = std::stoi(args[++i]);
                     } catch (...) {
                         print_usage(args[0].c_str());
                         return 1;
@@ -145,6 +159,10 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "n_predict must be >= 1\n");
             return 1;
         }
+        if (n_gpu_layers < -1) {
+            fprintf(stderr, "n_gpu_layers must be >= -1\n");
+            return 1;
+        }
     if (temperature < 0.0f) {
         fprintf(stderr, "temperature must be >= 0\n");
         return 1;
@@ -160,7 +178,7 @@ int main(int argc, char ** argv) {
 
     // initialize the model
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0; // CPU-only path
+    model_params.n_gpu_layers = n_gpu_layers;
 
     llama_model * model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (model == NULL) {

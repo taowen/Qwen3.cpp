@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -192,7 +193,120 @@ static struct llama_model * llama_model_load_from_file_impl(
         return nullptr;
     }
 
+    unsigned cur_percentage = 0;
+    if (params.progress_callback == NULL) {
+        params.progress_callback_user_data = &cur_percentage;
+        params.progress_callback = [](float progress, void * ctx) {
+            unsigned * cur_percentage_p = (unsigned *) ctx;
+            unsigned percentage = (unsigned) (100 * progress);
+            while (percentage > *cur_percentage_p) {
+                *cur_percentage_p = percentage;
+                LLAMA_LOG_CONT(".");
+                if (percentage >= 100) {
+                    LLAMA_LOG_CONT("\n");
+                }
+            }
+            return true;
+        };
+    }
+
     llama_model * model = new llama_model(params);
+
+    // create list of devices to use with this model
+    if (params.devices) {
+        for (ggml_backend_dev_t * dev = params.devices; *dev; ++dev) {
+            model->devices.push_back({false, *dev});
+        }
+    } else {
+        // default device selection
+
+        // build list of available devices
+        std::vector<llama_device> gpus;
+        std::vector<llama_device> igpus;
+        std::vector<llama_device> rpc_servers;
+
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            switch (ggml_backend_dev_type(dev)) {
+                case GGML_BACKEND_DEVICE_TYPE_CPU:
+                case GGML_BACKEND_DEVICE_TYPE_ACCEL:
+                    // skip CPU backends since they are handled separately
+                    break;
+
+                case GGML_BACKEND_DEVICE_TYPE_GPU: {
+                    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+                    if (ggml_backend_reg_name(reg) == std::string("RPC")) {
+                        rpc_servers.push_back({false, dev});
+                    } else {
+                        // check if there is already a GPU with the same device id
+                        ggml_backend_dev_props props;
+                        ggml_backend_dev_get_props(dev, &props);
+                        auto it = std::find_if(gpus.begin(), gpus.end(), [&props](const llama_device & d) {
+                            ggml_backend_dev_props d_props;
+                            ggml_backend_dev_get_props(d.dev, &d_props);
+                            if (props.device_id && d_props.device_id) {
+                                return strcmp(props.device_id, d_props.device_id) == 0;
+                            }
+                            return false;
+                        });
+
+                        if (it != gpus.end()) {
+                            LLAMA_LOG_INFO("%s: skipping device %s (%s) with id %s - already using device %s (%s) with the same id\n",
+                                    __func__,
+                                    ggml_backend_dev_name(dev), ggml_backend_dev_description(dev),
+                                    props.device_id ? props.device_id : "unknown id",
+                                    ggml_backend_dev_name(it->dev), ggml_backend_dev_description(it->dev));
+                        } else {
+                            gpus.push_back({false, dev});
+                        }
+                    }
+                    break;
+                }
+
+                case GGML_BACKEND_DEVICE_TYPE_IGPU:
+                    igpus.push_back({false, dev});
+                    break;
+                case GGML_BACKEND_DEVICE_TYPE_META:
+                    GGML_ABORT("fatal error");
+            }
+        }
+
+        // add RPC servers at the front of the list to minimize network transfers
+        model->devices.insert(model->devices.begin(), rpc_servers.begin(), rpc_servers.end());
+
+        // add GPUs
+        model->devices.insert(model->devices.end(), gpus.begin(), gpus.end());
+
+        // add integrated GPUs only if no other devices were found
+        if (model->devices.empty()) {
+            model->devices.insert(model->devices.end(), igpus.begin(), igpus.end());
+        }
+    }
+
+    // if using single GPU mode, remove all except the main GPU
+    if (params.split_mode == LLAMA_SPLIT_MODE_NONE) {
+        if (params.main_gpu < 0) {
+            model->devices.clear();
+        } else {
+            if (params.main_gpu >= (int)model->devices.size()) {
+                LLAMA_LOG_ERROR("%s: invalid value for main_gpu: %d (available devices: %zu)\n", __func__, params.main_gpu, model->devices.size());
+                llama_model_free(model);
+                return nullptr;
+            }
+            llama_device main_gpu = model->devices[params.main_gpu];
+            model->devices.clear();
+            model->devices.push_back(main_gpu);
+        }
+    }
+
+    for (const auto & dev : model->devices) {
+        ggml_backend_dev_props props;
+        ggml_backend_dev_get_props(dev.dev, &props);
+        LLAMA_LOG_INFO("%s: using device %s (%s) (%s) - %zu MiB free\n", __func__,
+                ggml_backend_dev_name(dev.dev), ggml_backend_dev_description(dev.dev),
+                props.device_id ? props.device_id : "unknown id",
+                props.memory_free/1024/1024);
+    }
 
     const int status = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, *model, params);
     GGML_ASSERT(status <= 0);

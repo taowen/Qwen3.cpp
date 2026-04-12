@@ -1,6 +1,8 @@
-﻿// SKELETON ONLY - no implementation copied yet.
-// SOURCE: ggml/src/ggml-sycl/repeat_back.hpp
-// USED_BY_QWEN3_MINIMAL: YES
-// TAG: KEEP_SYCL
-// NOTE: SYCL backend path.
-// RULE: strict line-by-line transplant only; no invented algorithms.
+#ifndef GGML_SYCL_REPEAT_BACK_HPP
+#define GGML_SYCL_REPEAT_BACK_HPP
+
+#include "common.hpp"
+
+void ggml_sycl_op_repeat_back(ggml_backend_sycl_context & ctx, ggml_tensor * dst);
+
+#endif  // GGML_SYCL_REPEAT_BACK_HPP
