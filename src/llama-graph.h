@@ -32,7 +32,6 @@ enum llm_graph_type {
 enum llm_norm_type {
     LLM_NORM,
     LLM_NORM_RMS,
-    LLM_NORM_GROUP,
 };
 
 // TODO: tmp - need something better to pass the data from the encoder to the decoder
@@ -139,7 +138,7 @@ public:
 };
 class llm_graph_input_cls : public llm_graph_input_i {
 public:
-    llm_graph_input_cls(const llama_cparams & cparams, const llm_arch arch) : cparams(cparams), arch(arch) {}
+    llm_graph_input_cls(const llama_cparams & cparams) : cparams(cparams) {}
     virtual ~llm_graph_input_cls() = default;
 
     void set_input(const llama_ubatch * ubatch) override;
@@ -147,7 +146,6 @@ public:
     ggml_tensor * cls; // I32 [n_batch]
 
     const llama_cparams cparams;
-    const llm_arch arch;
 };
 class llm_graph_input_attn_kv : public llm_graph_input_i {
 public:
@@ -474,9 +472,7 @@ struct llm_graph_context {
              ggml_tensor * q,
              ggml_tensor * k,
              ggml_tensor * v,
-             ggml_tensor * kq_b,
              ggml_tensor * kq_mask,
-             ggml_tensor * sinks,
                    float   kq_scale,
                      int   il) const;
 
@@ -486,8 +482,6 @@ struct llm_graph_context {
             ggml_tensor * q_cur, // [n_embd_head_q, n_head_q, n_tokens]
             ggml_tensor * k_cur, // [n_embd_head_k, n_head_k, n_tokens]
             ggml_tensor * v_cur, // [n_embd_head_v, n_head_v, n_tokens]
-            ggml_tensor * kq_b,
-            ggml_tensor * sinks, // [n_head_q]
                   float   kq_scale,
                     int   il) const;
     void build_pooling(

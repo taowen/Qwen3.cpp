@@ -67,12 +67,12 @@ llm_build_qwen3::llm_build_qwen3(const llama_model & model, const llm_graph_para
 
             cur = build_attn(inp_attn,
                     model.layers[il].wo,
-                    Qcur, Kcur, Vcur, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+                    Qcur, Kcur, Vcur, 1.0f/sqrtf(float(n_embd_head)), il);
             if (model.layers[il].wo_s) {
                 cur = ggml_mul(ctx0, cur, model.layers[il].wo_s);
             }
         }
-        if (il == n_layer - 1 && inp_out_ids) {
+        if (il == n_layer - 1) {
             cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
