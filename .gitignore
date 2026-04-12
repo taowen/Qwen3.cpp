@@ -51,3 +51,7 @@ _deps/
 *.log
 *.tmp
 tmp_*.txt
+
+# Keep deterministic test baselines versioned
+!/scripts/baselines/
+!/scripts/baselines/*.txt

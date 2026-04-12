@@ -556,92 +556,39 @@ ggml_tensor * llm_graph_context::build_norm(
 ggml_tensor * llm_graph_context::build_ffn(
          ggml_tensor * cur,
          ggml_tensor * up,
-         ggml_tensor * up_b,
          ggml_tensor * up_s,
          ggml_tensor * gate,
-         ggml_tensor * gate_b,
          ggml_tensor * gate_s,
          ggml_tensor * down,
-         ggml_tensor * down_b,
          ggml_tensor * down_s,
-         ggml_tensor * act_scales,
-     llm_ffn_op_type   type_op,
-   llm_ffn_gate_type   type_gate,
                  int   il) const {
-    ggml_tensor * tmp = up ? build_lora_mm(up, cur) : cur;
-    cb(tmp, "ffn_up", il);
+    // qwen3-cpp supports only the Qwen3 FFN layout:
+    // swiglu(parallel gate) + down projection.
+    GGML_ASSERT(up   != nullptr);
+    GGML_ASSERT(gate != nullptr);
+    GGML_ASSERT(down != nullptr);
 
-    if (up_b) {
-        tmp = ggml_add(ctx0, tmp, up_b);
-        cb(tmp, "ffn_up_b", il);
-    }
+    ggml_tensor * tmp = build_lora_mm(up, cur);
+    cb(tmp, "ffn_up", il);
 
     if (up_s) {
         tmp = ggml_mul(ctx0, tmp, up_s);
         cb(tmp, "ffn_up_s", il);
     }
 
-    if (gate) {
-        switch (type_gate) {
-            case LLM_FFN_SEQ:
-                {
-                    cur = build_lora_mm(gate, tmp);
-                    cb(cur, "ffn_gate", il);
-                } break;
-            case LLM_FFN_PAR:
-                {
-                    cur = build_lora_mm(gate, cur);
-                    cb(cur, "ffn_gate", il);
-                } break;
-        }
+    cur = build_lora_mm(gate, cur);
+    cb(cur, "ffn_gate", il);
 
-        if (gate_b) {
-            cur = ggml_add(ctx0, cur, gate_b);
-            cb(cur, "ffn_gate_b", il);
-        }
-
-        if (gate_s) {
-            cur = ggml_mul(ctx0, cur, gate_s);
-            cb(cur, "ffn_gate_s", il);
-        }
-
-    } else {
-        cur = tmp;
+    if (gate_s) {
+        cur = ggml_mul(ctx0, cur, gate_s);
+        cb(cur, "ffn_gate_s", il);
     }
 
-    // qwen3-cpp: keep only the FFN path used by Qwen3 models (SILU gate).
-    // This is a strict branch pruning of upstream logic, not a new algorithm.
-    GGML_UNUSED(act_scales);
+    cur = ggml_swiglu_split(ctx0, cur, tmp);
+    cb(cur, "ffn_swiglu", il);
 
-    if (type_op != LLM_FFN_SILU) {
-        GGML_ABORT("unsupported ffn op for qwen3-cpp");
-    }
-
-    if (gate && type_gate == LLM_FFN_PAR) {
-        cur = ggml_swiglu_split(ctx0, cur, tmp);
-        cb(cur, "ffn_swiglu", il);
-        type_gate = LLM_FFN_SEQ;
-    } else {
-        cur = ggml_silu(ctx0, cur);
-        cb(cur, "ffn_silu", il);
-    }
-
-    if (gate && type_gate == LLM_FFN_PAR) {
-        cur = ggml_mul(ctx0, cur, tmp);
-        cb(cur, "ffn_gate_par", il);
-    }
-
-    if (down) {
-        cur = build_lora_mm(down, cur);
-    }
-
-    if (down_b) {
-        cb(cur, "ffn_down", il);
-    }
-
-    if (down_b) {
-        cur = ggml_add(ctx0, cur, down_b);
-    }
+    cur = build_lora_mm(down, cur);
+    cb(cur, "ffn_down", il);
 
     if (down_s) {
         cur = ggml_mul(ctx0, cur, down_s);
@@ -796,7 +743,6 @@ ggml_tensor * llm_graph_context::build_attn_mha(
          ggml_tensor * kq_b,
          ggml_tensor * kq_mask,
          ggml_tensor * sinks,
-         ggml_tensor * v_mla,
                float   kq_scale,
                  int   il) const {
     const bool v_trans = v->nb[1] > v->nb[2];
@@ -836,23 +782,6 @@ ggml_tensor * llm_graph_context::build_attn_mha(
         ggml_flash_attn_ext_add_sinks(cur, sinks);
         ggml_flash_attn_ext_set_prec (cur, GGML_PREC_F32);
 
-        if (v_mla) {
-#if 0
-            // v_mla can be applied as a matrix-vector multiplication with broadcasting across dimension 3 == n_tokens.
-            // However, the code is optimized for dimensions 0 and 1 being large, so this is inefficient.
-            cur = ggml_reshape_4d(ctx0, cur, v_mla->ne[0], 1, n_head, n_tokens);
-            cur = ggml_mul_mat(ctx0, v_mla, cur);
-#else
-            // It's preferable to do the calculation as a matrix-matrix multiplication with n_tokens in dimension 1.
-            // The permutations are noops and only change how the tensor data is interpreted.
-            cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
-            cur = ggml_mul_mat(ctx0, v_mla, cur);
-            cb(cur, "fattn_mla", il);
-            cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
-            cur = ggml_cont(ctx0, cur); // Needed because ggml_reshape_2d expects contiguous inputs.
-#endif
-        }
-
         cur = ggml_reshape_2d(ctx0, cur, cur->ne[0]*cur->ne[1], cur->ne[2]*cur->ne[3]);
     } else {
         ggml_tensor * kq = ggml_mul_mat(ctx0, k, q);
@@ -889,12 +818,6 @@ ggml_tensor * llm_graph_context::build_attn_mha(
 
         ggml_tensor * kqv = ggml_mul_mat(ctx0, v, kq);
         cb(kqv, "kqv", il);
-
-        // for MLA with the absorption optimization, we need to "decompress" from MQA back to MHA
-        if (v_mla) {
-            kqv = ggml_mul_mat(ctx0, v_mla, kqv);
-            cb(kqv, "kqv_mla", il);
-        }
 
         cur = ggml_permute(ctx0, kqv, 0, 2, 1, 3);
 
@@ -947,17 +870,13 @@ llm_graph_input_attn_kv * llm_graph_context::build_attn_inp_kv() const {
 ggml_tensor * llm_graph_context::build_attn(
         llm_graph_input_attn_kv * inp,
         ggml_tensor * wo,
-        ggml_tensor * wo_b,
         ggml_tensor * q_cur,
         ggml_tensor * k_cur,
         ggml_tensor * v_cur,
         ggml_tensor * kq_b,
         ggml_tensor * sinks,
-        ggml_tensor * v_mla, // TODO: remove
             float     kq_scale,
             int       il) const {
-    GGML_ASSERT(v_mla == nullptr);
-
     if (inp->self_k_rot) {
         q_cur = ggml_mul_mat_aux(ctx0, q_cur, inp->self_k_rot);
         k_cur = ggml_mul_mat_aux(ctx0, k_cur, inp->self_k_rot);
@@ -991,7 +910,7 @@ ggml_tensor * llm_graph_context::build_attn(
     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
     ggml_tensor * v = mctx_cur->get_v(ctx0, il);
 
-    ggml_tensor * cur = build_attn_mha(q, k, v, kq_b, kq_mask, sinks, v_mla, kq_scale, il);
+    ggml_tensor * cur = build_attn_mha(q, k, v, kq_b, kq_mask, sinks, kq_scale, il);
     cb(cur, "kqv_out", il);
 
     if (inp->self_v_rot) {
@@ -1000,10 +919,6 @@ ggml_tensor * llm_graph_context::build_attn(
 
     if (wo) {
         cur = build_lora_mm(wo, cur);
-    }
-
-    if (wo_b) {
-        cur = ggml_add(ctx0, cur, wo_b);
     }
 
     return cur;

@@ -29,22 +29,6 @@ enum llm_graph_type {
     LLM_GRAPH_TYPE_DECODER,
 };
 
-enum llm_ffn_op_type {
-    LLM_FFN_SILU,
-    LLM_FFN_GELU,
-    LLM_FFN_RELU,
-    LLM_FFN_RELU_SQR,
-    LLM_FFN_SWIGLU,
-    LLM_FFN_GEGLU,
-    LLM_FFN_REGLU,
-    LLM_FFN_SWIGLU_OAI_MOE,
-};
-
-enum llm_ffn_gate_type {
-    LLM_FFN_SEQ,
-    LLM_FFN_PAR, // ffn_gate is parallel to ffn_up
-};
-
 enum llm_norm_type {
     LLM_NORM,
     LLM_NORM_RMS,
@@ -473,17 +457,11 @@ struct llm_graph_context {
     ggml_tensor * build_ffn(
              ggml_tensor * cur,
              ggml_tensor * up,
-             ggml_tensor * up_b,
              ggml_tensor * up_s,
              ggml_tensor * gate,
-             ggml_tensor * gate_b,
              ggml_tensor * gate_s,
              ggml_tensor * down,
-             ggml_tensor * down_b,
              ggml_tensor * down_s,
-             ggml_tensor * act_scales,
-          llm_ffn_op_type   type_op,
-        llm_ffn_gate_type   type_gate,
                      int   il) const;
     ggml_tensor * build_inp_embd(ggml_tensor * tok_embd) const;
     ggml_tensor * build_inp_pos() const;
@@ -499,20 +477,17 @@ struct llm_graph_context {
              ggml_tensor * kq_b,
              ggml_tensor * kq_mask,
              ggml_tensor * sinks,
-             ggml_tensor * v_mla,
                    float   kq_scale,
                      int   il) const;
 
     ggml_tensor * build_attn(
             llm_graph_input_attn_kv * inp,
             ggml_tensor * wo,
-            ggml_tensor * wo_b,
             ggml_tensor * q_cur, // [n_embd_head_q, n_head_q, n_tokens]
             ggml_tensor * k_cur, // [n_embd_head_k, n_head_k, n_tokens]
             ggml_tensor * v_cur, // [n_embd_head_v, n_head_v, n_tokens]
             ggml_tensor * kq_b,
             ggml_tensor * sinks, // [n_head_q]
-            ggml_tensor * v_mla, // [n_embd_head_v_mla, n_embd_head_v, n_head_v] // TODO: remove
                   float   kq_scale,
                     int   il) const;
     void build_pooling(

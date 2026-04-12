@@ -66,8 +66,8 @@ llm_build_qwen3::llm_build_qwen3(const llama_model & model, const llm_graph_para
             cb(Vcur, "Vcur", il);
 
             cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].bo,
-                    Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+                    model.layers[il].wo,
+                    Qcur, Kcur, Vcur, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
             if (model.layers[il].wo_s) {
                 cur = ggml_mul(ctx0, cur, model.layers[il].wo_s);
             }
@@ -86,11 +86,10 @@ llm_build_qwen3::llm_build_qwen3(const llama_model & model, const llm_graph_para
         cb(cur, "ffn_norm", il);
 
         cur = build_ffn(cur,
-                model.layers[il].ffn_up,   NULL, model.layers[il].ffn_up_s,
-                model.layers[il].ffn_gate, NULL, model.layers[il].ffn_gate_s,
-                model.layers[il].ffn_down, NULL, model.layers[il].ffn_down_s,
-                NULL,
-                LLM_FFN_SILU, LLM_FFN_PAR, il);
+                model.layers[il].ffn_up,   model.layers[il].ffn_up_s,
+                model.layers[il].ffn_gate, model.layers[il].ffn_gate_s,
+                model.layers[il].ffn_down, model.layers[il].ffn_down_s,
+                il);
         cb(cur, "ffn_out", il);
 
         cur = ggml_add(ctx0, cur, ffn_inp);

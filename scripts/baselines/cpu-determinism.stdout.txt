@@ -1,0 +1,7 @@
+<|im_start|>user
+one sentence about why cache locality matters in CPU performance.<|im_end|>
+<|im_start|>assistant
+<think>
+Okay, the user wants a one-sentence explanation about why cache locality matters in CPU performance. Let me start by recalling what cache locality means. It's the tendency for data to be stored in the same cache location as the data it needs. So, why is that important?
+
+First, I need to highlight

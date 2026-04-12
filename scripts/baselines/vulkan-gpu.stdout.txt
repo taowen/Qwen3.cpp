@@ -1,0 +1,5 @@
+<|im_start|>user
+one sentence about why cache locality matters.<|im_end|>
+<|im_start|>assistant
+<think>
+Okay, the user wants a one-sentence explanation about why cache locality matters. Let me start by recalling what cache locality means. It's about how data is stored in the cache, right? So, the main idea is that data in the cache is stored in a way that minimizes the need for disk

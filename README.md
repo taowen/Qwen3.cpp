@@ -57,6 +57,65 @@ Custom model example:
 - If Python env is missing, the script auto-runs `scripts/setup-uv-env.ps1`.
 - You can pass a local HF model directory via `-Model "C:\path\to\model"`.
 
+## Determinism Test (CLI Output)
+
+Run two identical inference calls and verify:
+
+- `stdout` is exactly identical across two runs
+- `stdout` matches pinned baseline text `scripts\baselines\cpu-determinism.stdout.txt`
+
+```powershell
+.\scripts\test-qwen3-determinism.ps1
+```
+
+Or:
+
+```cmd
+scripts\test-qwen3-determinism.cmd
+```
+
+Optional args include `-Exe`, `-Model`, `-Prompt`, `-NPredict`, `-BaselineFile`, `-OutDir`, and `-KeepLogs`.
+
+## SYCL GPU Test
+
+Run two identical SYCL GPU inferences and verify:
+
+- SYCL/GPU offload logs are present in both runs
+- `stdout` is exactly identical across the two runs
+- `stdout` matches pinned baseline text `scripts\baselines\sycl-gpu.stdout.txt`
+
+```powershell
+.\scripts\test-qwen3-sycl-gpu.ps1
+```
+
+Or:
+
+```cmd
+scripts\test-qwen3-sycl-gpu.cmd
+```
+
+Optional args include `-Exe`, `-Model`, `-Prompt`, `-NPredict`, `-NGpuLayers`, `-BaselineFile`, `-TimeoutSec`, `-OutDir`, and `-KeepLogs`.
+
+## Vulkan GPU Test
+
+Run two identical Vulkan GPU inferences and verify:
+
+- Vulkan/GPU offload logs are present in both runs
+- `stdout` is exactly identical across the two runs
+- `stdout` matches pinned baseline text `scripts\baselines\vulkan-gpu.stdout.txt`
+
+```powershell
+.\scripts\test-qwen3-vulkan.ps1
+```
+
+Or:
+
+```cmd
+scripts\test-qwen3-vulkan.cmd
+```
+
+Optional args include `-Exe`, `-Model`, `-Prompt`, `-NPredict`, `-NGpuLayers`, `-BaselineFile`, `-TimeoutSec`, `-OutDir`, and `-KeepLogs`.
+
 ## Local Model Paths
 
 Current local copies:
