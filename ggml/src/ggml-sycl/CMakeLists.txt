@@ -6,6 +6,13 @@ if (NOT GGML_SYCL_TARGET MATCHES "^(INTEL)$")
     message(FATAL_ERROR "GGML_SYCL_TARGET: Invalid target, the supported options are [INTEL]")
 endif()
 
+if (WIN32 AND CMAKE_GENERATOR MATCHES "Visual Studio")
+    message(FATAL_ERROR
+        "GGML_SYCL on Windows must be built with Ninja + icx in this fork. "
+        "Visual Studio generators use link.exe and can drop SYCL device-link flags, "
+        "which leads to runtime failures like 'No kernel named ... was found'.")
+endif()
+
 check_cxx_compiler_flag("-fsycl" SUPPORTS_SYCL)
 
 if (DEFINED ENV{ONEAPI_ROOT})
@@ -86,11 +93,14 @@ endmacro()
 detect_and_find_package(IntelSYCL)
 if (IntelSYCL_FOUND)
     # Use oneAPI CMake when possible
-    target_link_libraries(ggml-sycl PRIVATE IntelSYCL::SYCL_CXX)
+    # ggml-sycl can be linked statically into executables via ggml.
+    # Keep SYCL link requirements transitive so the final link step gets
+    # proper SYCL device-link flags and runtime libs (important on Windows).
+    target_link_libraries(ggml-sycl PUBLIC IntelSYCL::SYCL_CXX)
 else()
     # Fallback to the simplest way of enabling SYCL when using intel/llvm nightly for instance
     target_compile_options(ggml-sycl PRIVATE "-fsycl")
-    target_link_options(ggml-sycl PRIVATE "-fsycl")
+    target_link_options(ggml-sycl PUBLIC "-fsycl")
 endif()
 
 target_compile_options(ggml-sycl PRIVATE "-Wno-narrowing")

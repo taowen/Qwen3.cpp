@@ -14,6 +14,7 @@ add_library(qwen3-llama STATIC
     llama-mmap.cpp
     llama-model-loader.cpp
     llama-model.cpp
+    llama-quant.cpp
     llama-sampler.cpp
     llama-vocab.cpp
     unicode-data.cpp

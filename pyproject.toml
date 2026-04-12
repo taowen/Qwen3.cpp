@@ -1,0 +1,17 @@
+[project]
+name = "qwen3cpp-quant-tools"
+version = "0.1.0"
+description = "Python tooling for PyTorch/HF to GGUF conversion and AutoRound export"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy>=1.26",
+    "transformers>=4.45",
+    "safetensors>=0.4.3",
+    "sentencepiece>=0.2.0",
+    "gguf>=0.10.0",
+    "auto-round>=0.6.0",
+    "accelerate>=0.30.0",
+]
+
+[tool.uv]
+package = false
