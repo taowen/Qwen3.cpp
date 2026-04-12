@@ -3,7 +3,6 @@
 #include "llama-impl.h"
 #include "llama-io.h"
 #include "llama-model.h"
-#include "llama-context.h"
 
 #include <algorithm>
 #include <cassert>
@@ -55,21 +54,6 @@ static void ggml_gen_hadamard(ggml_tensor * tensor) {
     if (tensor->type != GGML_TYPE_F32) {
         ggml_quantize_chunk(tensor->type, data, tensor->data, 0, 1, n*n, nullptr);
     }
-}
-
-static ggml_tensor * ggml_mul_mat_aux(
-        ggml_context * ctx,
-        ggml_tensor * cur,
-        ggml_tensor * rot) {
-    const auto n = rot->ne[0];
-
-    ggml_tensor * res;
-
-    res = ggml_reshape_2d(ctx, cur, n, ggml_nelements(cur)/n);
-    res = ggml_mul_mat   (ctx, rot, res);
-    res = ggml_reshape_4d(ctx, res, cur->ne[0], cur->ne[1], cur->ne[2], cur->ne[3]);
-
-    return res;
 }
 
 //
@@ -666,10 +650,11 @@ llama_memory_context_ptr llama_kv_cache::init_full() {
 
 llama_memory_context_ptr llama_kv_cache::init_update(llama_context * lctx, bool optimize) {
     GGML_UNUSED(optimize);
+    GGML_UNUSED(lctx);
 
     bool do_shift = get_has_shift();
 
-    return std::make_unique<llama_kv_cache_context>(this, lctx, do_shift, std::move(sc_info));
+    return std::make_unique<llama_kv_cache_context>(this, do_shift, std::move(sc_info));
 }
 
 llama_kv_cache::slot_info_vec_t llama_kv_cache::prepare(const std::vector<llama_ubatch> & ubatches) {
@@ -742,8 +727,7 @@ llama_kv_cache::slot_info_vec_t llama_kv_cache::prepare(const std::vector<llama_
 // [QWEN3-CPP TRIM] llama_kv_cache::update(), K-shift graph, and state read/write blocks are intentionally omitted at this stage.
 // These omitted functions will be restored by strict source copy only if required by the Qwen3 minimal runtime path.
 
-bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_copy_info & sc_info) {
-    GGML_UNUSED(lctx);
+bool llama_kv_cache::update(bool do_shift, const stream_copy_info & sc_info) {
     bool updated = false;
 
     if (!sc_info.empty()) {
@@ -1369,20 +1353,6 @@ void llama_kv_cache::set_input_v_idxs(ggml_tensor * dst, const llama_ubatch * ub
     }
 }
 
-void llama_kv_cache::set_input_k_shift(ggml_tensor * dst) const {
-    GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
-
-    int32_t * data = (int32_t *) dst->data;
-
-    for (uint32_t s = 0; s < n_stream; ++s) {
-        const auto & cells = v_cells[s];
-
-        for (uint32_t i = 0; i < cells.size(); ++i) {
-            data[s*cells.size() + i] = cells.is_empty(i) ? 0 : cells.get_shift(i);
-        }
-    }
-}
-
 struct args_set_input_kq_mask {
     const llama_hparams & hparams;
     const llama_ubatch  * ubatch;
@@ -1613,31 +1583,6 @@ void llama_kv_cache::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * u
     //LLAMA_LOG_ERROR("%s: kq mask time: %0.3f ms\n", __func__, (t_end - t_start)/1000.0);
 }
 
-void llama_kv_cache::set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const {
-    const int64_t n_tokens = ubatch->n_tokens;
-
-    GGML_ASSERT(n_stream == 1 && "TODO: support multiple streams");
-    const auto & cells = v_cells[0];
-
-    GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
-    GGML_ASSERT(!ubatch->equal_seqs()); // TODO: use ubatch->n_seqs instead of failing
-
-    int32_t * data = (int32_t *) dst->data;
-
-    const int32_t n_kv = dst->ne[0];
-
-    for (int h = 0; h < 1; ++h) {
-        for (int i = 0; i < n_tokens; ++i) {
-            for (int j = 0; j < n_kv; ++j) {
-                // the position when the cells is empty is irrelevant - it will be masked out later in the attention
-                const llama_pos p0 = cells.is_empty(j) ? -1 : cells.pos_get(j);
-
-                data[h*(n_kv*n_tokens) + i*n_kv + j] = llama_relative_position_bucket(p0, ubatch->pos[i], hparams.n_rel_attn_bkts, false);
-            }
-        }
-    }
-}
-
 void llama_kv_cache::set_input_k_rot(ggml_tensor * dst) const {
     GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
 
@@ -1654,16 +1599,6 @@ void llama_kv_cache::set_input_v_rot(ggml_tensor * dst) const {
     GGML_ASSERT(attn_rot_hadamard.count(dst->ne[0]));
 
     memcpy(dst->data, attn_rot_hadamard.at(n_rot).data(), ggml_nbytes(dst));
-}
-
-size_t llama_kv_cache::total_size() const {
-    size_t size = 0;
-
-    for (const auto & [_, buf] : ctxs_bufs) {
-        size += ggml_backend_buffer_get_size(buf.get());
-    }
-
-    return size;
 }
 
 size_t llama_kv_cache::size_k_bytes() const {
@@ -2227,9 +2162,8 @@ llama_kv_cache_context::llama_kv_cache_context(
 
 llama_kv_cache_context::llama_kv_cache_context(
         llama_kv_cache * kv,
-        llama_context * lctx,
         bool do_shift,
-        stream_copy_info sc_info) : status(LLAMA_MEMORY_STATUS_SUCCESS), kv(kv), lctx(lctx), do_shift(do_shift), sc_info(std::move(sc_info)) {
+        stream_copy_info sc_info) : status(LLAMA_MEMORY_STATUS_SUCCESS), kv(kv), do_shift(do_shift), sc_info(std::move(sc_info)) {
     if (!do_shift && this->sc_info.empty()) {
         status = LLAMA_MEMORY_STATUS_NO_UPDATE;
     }
@@ -2258,7 +2192,7 @@ bool llama_kv_cache_context::apply() {
 
     // no ubatches -> this is a KV cache update
     if (ubatches.empty()) {
-        kv->update(lctx, do_shift, sc_info);
+        kv->update(do_shift, sc_info);
 
         return true;
     }
@@ -2323,10 +2257,6 @@ ggml_tensor * llama_kv_cache_context::build_input_v_rot(ggml_context * ctx) cons
     return kv->build_input_v_rot(ctx);
 }
 
-void llama_kv_cache_context::set_input_k_shift(ggml_tensor * dst) const {
-    kv->set_input_k_shift(dst);
-}
-
 void llama_kv_cache_context::set_input_k_idxs(ggml_tensor * dst, const llama_ubatch * ubatch) const {
     kv->set_input_k_idxs(dst, ubatch, sinfos[i_cur]);
 }
@@ -2337,10 +2267,6 @@ void llama_kv_cache_context::set_input_v_idxs(ggml_tensor * dst, const llama_uba
 
 void llama_kv_cache_context::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn) const {
     kv->set_input_kq_mask(dst, ubatch, causal_attn);
-}
-
-void llama_kv_cache_context::set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const {
-    kv->set_input_pos_bucket(dst, ubatch);
 }
 
 void llama_kv_cache_context::set_input_k_rot(ggml_tensor * dst) const {

@@ -4,13 +4,6 @@
 
 #include <cstdint>
 
-// Reserve a new compute graph. It is valid until the next call to llama_graph_reserve.
-LLAMA_API struct ggml_cgraph * llama_graph_reserve(
-        struct llama_context * ctx,
-        uint32_t n_tokens,
-        uint32_t n_seqs,
-        uint32_t n_outputs);
-
 // Get the default ggml_type for a given ftype.
 LLAMA_API ggml_type llama_ftype_get_default_type(llama_ftype ftype);
 

@@ -7,16 +7,12 @@
 #include "llama-impl.h"
 
 #include "ggml-cpp.h"
-#include "ggml-opt.h"
 
 #include <map>
 #include <vector>
 
 struct llama_model;
 class llama_batch_allocr;
-
-class llama_io_read_i;
-class llama_io_write_i;
 
 // "memory" as in abstract memory for the context
 struct llama_memory_i;
@@ -56,65 +52,14 @@ struct llama_context {
 
     ggml_backend_sched_t get_sched() const;
 
-    uint32_t n_ctx()     const;
-    uint32_t n_ctx_seq() const;
-    uint32_t n_batch()   const;
-    uint32_t n_ubatch()  const;
-    uint32_t n_seq_max() const;
-
-    uint32_t n_threads()       const;
-    uint32_t n_threads_batch() const;
-
-    llama_memory_t get_memory() const;
-
     // return true if the memory was updated
     bool memory_update(bool optimize);
 
-    enum llama_pooling_type pooling_type() const;
-
-    float * get_logits();
     float * get_logits_ith(int32_t i);
 
-    float * get_embeddings();
-    float * get_embeddings_ith(int32_t i);
-    float * get_embeddings_seq(llama_seq_id seq_id);
-
-    llama_token * get_sampled_tokens() const;
-    llama_token   get_sampled_token_ith(int32_t idx);
-
     float * get_sampled_logits_ith(int32_t idx);
-    size_t  get_sampled_logits_count(int32_t idx);
-
-    float * get_sampled_probs_ith(int32_t idx);
-    size_t  get_sampled_probs_count(int32_t idx);
-
-    const llama_token * get_sampled_candidates_ith(int32_t idx);
-    size_t get_sampled_candidates_count(int32_t idx);
-
-    void attach_threadpool(
-            ggml_threadpool_t threadpool,
-            ggml_threadpool_t threadpool_batch);
-
-    void detach_threadpool();
-
-    void set_n_threads(int32_t n_threads, int32_t n_threads_batch);
 
     void set_abort_callback(bool (*abort_callback)(void * data), void * abort_callback_data);
-
-    void set_embeddings (bool value);
-    void set_causal_attn(bool value);
-    void set_warmup(bool value);
-
-    void set_adapters_lora(llama_adapter_lora ** adapters, size_t n_adapters, float * scales);
-
-    bool adapters_lora_are_same(llama_adapter_lora ** adapters, size_t n_adapters, float * scales);
-
-    bool set_adapter_cvec(
-            const float * data,
-                 size_t   len,
-                int32_t   n_embd,
-                int32_t   il_start,
-                int32_t   il_end);
 
     // process a single ubatch with a specific graph type
     // if memory_context is provided, it will be applied first to the context's memory
@@ -129,77 +74,8 @@ struct llama_context {
     int encode(const llama_batch & batch_inp);
     int decode(const llama_batch & batch_inp);
 
-    //
-    // state save/load
-    //
-
-    size_t state_get_size();
-    size_t state_get_data(      uint8_t * dst, size_t size);
-    size_t state_set_data(const uint8_t * src, size_t size);
-
-    size_t state_seq_get_size(llama_seq_id seq_id, llama_state_seq_flags flags);
-    size_t state_seq_get_data(llama_seq_id seq_id,       uint8_t * dst, size_t size, llama_state_seq_flags flags);
-    size_t state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags);
-
-    bool state_load_file(
-            const char * filepath,
-           llama_token * tokens_out,
-                size_t   n_token_capacity,
-                size_t * n_token_count_out);
-
-    bool state_save_file(
-            const char * filepath,
-     const llama_token * tokens,
-                size_t   n_token_count);
-
-    size_t state_seq_load_file(
-          llama_seq_id   seq_id,
-            const char * filepath,
-           llama_token * tokens_out,
-                size_t   n_token_capacity,
-                size_t * n_token_count_out);
-
-    size_t state_seq_save_file(
-          llama_seq_id   seq_id,
-            const char * filepath,
-     const llama_token * tokens,
-                size_t   n_token_count);
-
-    //
-    // perf
-    //
-
     llama_perf_context_data perf_get_data() const;
     void perf_reset();
-
-    std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data> memory_breakdown() const;
-
-    //
-    // training
-    //
-
-    void opt_init(struct llama_model * model, struct llama_opt_params lopt_params);
-
-    // TODO: more flexible combinations of logical/physical batch size and context size
-    void opt_epoch(
-            ggml_opt_dataset_t      dataset,
-            ggml_opt_result_t       result_train,
-            ggml_opt_result_t       result_eval,
-            int64_t                 idata_split,
-            ggml_opt_epoch_callback callback_train,
-            ggml_opt_epoch_callback callback_eval);
-
-    void opt_epoch_iter(
-            ggml_opt_dataset_t               dataset,
-            ggml_opt_result_t                result,
-            const std::vector<llama_token> & tokens,
-            const std::vector<llama_token> & labels_sparse,
-            llama_batch                    & batch,
-            ggml_opt_epoch_callback          callback,
-            bool                             train,
-            int64_t                          idata_in_loop,
-            int64_t                          ndata_in_loop,
-            int64_t                          t_loop_start);
 
 private:
     //
@@ -242,13 +118,6 @@ private:
                           llm_graph_type   gtype) const;
 
     llm_graph_cb graph_get_cb() const;
-
-    // TODO: read/write lora adapters and cvec
-    size_t state_write_data(llama_io_write_i & io);
-    size_t state_read_data (llama_io_read_i  & io);
-
-    size_t state_seq_write_data(llama_io_write_i & io, llama_seq_id seq_id, llama_state_seq_flags flags);
-    size_t state_seq_read_data (llama_io_read_i  & io, llama_seq_id seq_id, llama_state_seq_flags flags);
 
     //
     // members
@@ -315,9 +184,6 @@ private:
 
     ggml_backend_t backend_cpu = nullptr;
     std::vector<ggml_backend_ptr> backends;
-
-    // training
-    ggml_opt_context_t opt_ctx = nullptr;
 
     ggml_threadpool_t threadpool       = nullptr;
     ggml_threadpool_t threadpool_batch = nullptr;

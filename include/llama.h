@@ -447,14 +447,6 @@ extern "C" {
     //optional:
     LLAMA_API void llama_numa_init(enum ggml_numa_strategy numa);
 
-    // Optional: an auto threadpool gets created in ggml if not passed explicitly
-    LLAMA_API void llama_attach_threadpool(
-            struct llama_context * ctx,
-               ggml_threadpool_t   threadpool,
-               ggml_threadpool_t   threadpool_batch);
-
-    LLAMA_API void llama_detach_threadpool(struct llama_context * ctx);
-
     typedef void (*llama_model_set_tensor_data_t)(struct ggml_tensor * tensor, void * userdata);
 
     // Create a new model from GGUF metadata as well as a function to set the tensor data
@@ -503,11 +495,6 @@ extern "C" {
                      struct llama_model * model,
             struct llama_context_params   params);
 
-    DEPRECATED(LLAMA_API struct llama_context * llama_new_context_with_model(
-                     struct llama_model * model,
-            struct llama_context_params   params),
-            "use llama_init_from_model instead");
-
     // Frees all allocated memory
     LLAMA_API void llama_free(struct llama_context * ctx);
 
@@ -543,15 +530,6 @@ extern "C" {
     LLAMA_API bool llama_supports_gpu_offload(void);
     LLAMA_API bool llama_supports_rpc        (void);
 
-    // NOTE: After creating a llama_context, it is recommended to query the actual values using these functions
-    //       In some cases the requested values via llama_context_params may differ from the actual values used by the context
-    //       ref: https://github.com/ggml-org/llama.cpp/pull/17046#discussion_r2503085732
-    LLAMA_API uint32_t llama_n_ctx      (const struct llama_context * ctx);
-    LLAMA_API uint32_t llama_n_ctx_seq  (const struct llama_context * ctx);
-    LLAMA_API uint32_t llama_n_batch    (const struct llama_context * ctx);
-    LLAMA_API uint32_t llama_n_ubatch   (const struct llama_context * ctx);
-    LLAMA_API uint32_t llama_n_seq_max  (const struct llama_context * ctx);
-
     DEPRECATED(LLAMA_API int32_t llama_n_ctx_train(const struct llama_model * model), "use llama_model_n_ctx_train instead");
     DEPRECATED(LLAMA_API int32_t llama_n_embd     (const struct llama_model * model), "use llama_model_n_embd instead");
     DEPRECATED(LLAMA_API int32_t llama_n_layer    (const struct llama_model * model), "use llama_model_n_layer instead");
@@ -560,8 +538,6 @@ extern "C" {
     DEPRECATED(LLAMA_API int32_t llama_n_vocab    (const struct llama_vocab * vocab), "use llama_vocab_n_tokens instead");
 
     LLAMA_API const struct llama_model * llama_get_model   (const struct llama_context * ctx);
-    LLAMA_API           llama_memory_t   llama_get_memory  (const struct llama_context * ctx);
-    LLAMA_API  enum llama_pooling_type   llama_pooling_type(const struct llama_context * ctx); // TODO: rename to llama_get_pooling_type
 
     LLAMA_API const struct llama_vocab * llama_model_get_vocab(const struct llama_model * model);
     LLAMA_API enum llama_rope_type       llama_model_rope_type(const struct llama_model * model);
@@ -684,200 +660,9 @@ extern "C" {
     LLAMA_API uint64_t            llama_adapter_get_alora_n_invocation_tokens(const struct llama_adapter_lora * adapter);
     LLAMA_API const llama_token * llama_adapter_get_alora_invocation_tokens  (const struct llama_adapter_lora * adapter);
 
-    // The following functions operate on a llama_context, hence the naming: llama_verb_...
-
-    // Set LoRa adapters on the context. Will only modify if the adapters currently in context are different.
-    LLAMA_API int32_t llama_set_adapters_lora(
-            struct llama_context * ctx,
-            struct llama_adapter_lora ** adapters,
-            size_t n_adapters,
-            float * scales);
-
-    // Apply a loaded control vector to a llama_context, or if data is NULL, clear
-    // the currently loaded vector.
-    // n_embd should be the size of a single layer's control, and data should point
-    // to an n_embd x n_layers buffer starting from layer 1.
-    // il_start and il_end are the layer range the vector should apply to (both inclusive)
-    // See llama_control_vector_load in common to load a control vector.
-    LLAMA_API int32_t llama_set_adapter_cvec(
-            struct llama_context * ctx,
-                     const float * data,
-                          size_t   len,
-                         int32_t   n_embd,
-                         int32_t   il_start,
-                         int32_t   il_end);
-
-    //
-    // Memory
-    //
-
-    // Clear the memory contents
-    // If data == true, the data buffers will also be cleared together with the metadata
-    LLAMA_API void llama_memory_clear(
-            llama_memory_t mem,
-                      bool data);
-
-    // Removes all tokens that belong to the specified sequence and have positions in [p0, p1)
-    // Returns false if a partial sequence cannot be removed. Removing a whole sequence never fails
-    // seq_id < 0 : match any sequence
-    // p0 < 0     : [0,  p1]
-    // p1 < 0     : [p0, inf)
-    LLAMA_API bool llama_memory_seq_rm(
-            llama_memory_t mem,
-              llama_seq_id seq_id,
-                 llama_pos p0,
-                 llama_pos p1);
-
-    // Copy all tokens that belong to the specified sequence to another sequence
-    // p0 < 0 : [0,  p1]
-    // p1 < 0 : [p0, inf)
-    LLAMA_API void llama_memory_seq_cp(
-            llama_memory_t mem,
-              llama_seq_id seq_id_src,
-              llama_seq_id seq_id_dst,
-                 llama_pos p0,
-                 llama_pos p1);
-
-    // Removes all tokens that do not belong to the specified sequence
-    LLAMA_API void llama_memory_seq_keep(
-            llama_memory_t mem,
-              llama_seq_id seq_id);
-
-    // Adds relative position "delta" to all tokens that belong to the specified sequence and have positions in [p0, p1)
-    // p0 < 0 : [0,  p1]
-    // p1 < 0 : [p0, inf)
-    LLAMA_API void llama_memory_seq_add(
-            llama_memory_t mem,
-              llama_seq_id seq_id,
-                 llama_pos p0,
-                 llama_pos p1,
-                 llama_pos delta);
-
-    // Integer division of the positions by factor of `d > 1`
-    // p0 < 0 : [0,  p1]
-    // p1 < 0 : [p0, inf)
-    LLAMA_API void llama_memory_seq_div(
-            llama_memory_t mem,
-              llama_seq_id seq_id,
-                 llama_pos p0,
-                 llama_pos p1,
-                       int d);
-
-    // Returns the smallest position present in the memory for the specified sequence
-    // This is typically non-zero only for SWA caches
-    // Note that all positions in the range [pos_min, pos_max] are guaranteed to be present in the memory
-    // Return -1 if the sequence is empty
-    LLAMA_API llama_pos llama_memory_seq_pos_min(
-            llama_memory_t mem,
-              llama_seq_id seq_id);
-
-    // Returns the largest position present in the memory for the specified sequence
-    // Note that all positions in the range [pos_min, pos_max] are guaranteed to be present in the memory
-    // Return -1 if the sequence is empty
-    LLAMA_API llama_pos llama_memory_seq_pos_max(
-            llama_memory_t mem,
-              llama_seq_id seq_id);
-
-    // Check if the memory supports shifting
-    LLAMA_API bool llama_memory_can_shift(llama_memory_t mem);
-
     //
     // State / sessions
     //
-
-    // Returns the *actual* size in bytes of the state
-    // (logits, embedding and memory)
-    // Only use when saving the state, not when restoring it, otherwise the size may be too small.
-    LLAMA_API size_t llama_state_get_size(struct llama_context * ctx);
-    LLAMA_API DEPRECATED(size_t llama_get_state_size(struct llama_context * ctx),
-        "use llama_state_get_size instead");
-
-    // Copies the state to the specified destination address.
-    // Destination needs to have allocated enough memory.
-    // Returns the number of bytes copied
-    LLAMA_API size_t llama_state_get_data(
-            struct llama_context * ctx,
-                         uint8_t * dst,
-                          size_t   size);
-    LLAMA_API DEPRECATED(size_t llama_copy_state_data(
-            struct llama_context * ctx,
-                         uint8_t * dst),
-        "use llama_state_get_data instead");
-
-    // Set the state reading from the specified address
-    // Returns the number of bytes read
-    LLAMA_API size_t llama_state_set_data(
-            struct llama_context * ctx,
-                   const uint8_t * src,
-                          size_t   size);
-    LLAMA_API DEPRECATED(size_t llama_set_state_data(
-            struct llama_context * ctx,
-                   const uint8_t * src),
-        "use llama_state_set_data instead");
-
-    // Save/load session file
-    LLAMA_API bool llama_state_load_file(
-            struct llama_context * ctx,
-                      const char * path_session,
-                     llama_token * tokens_out,
-                          size_t   n_token_capacity,
-                          size_t * n_token_count_out);
-    LLAMA_API DEPRECATED(bool llama_load_session_file(
-            struct llama_context * ctx,
-                      const char * path_session,
-                     llama_token * tokens_out,
-                          size_t   n_token_capacity,
-                          size_t * n_token_count_out),
-        "use llama_state_load_file instead");
-
-    LLAMA_API bool llama_state_save_file(
-            struct llama_context * ctx,
-                      const char * path_session,
-               const llama_token * tokens,
-                          size_t   n_token_count);
-    LLAMA_API DEPRECATED(bool llama_save_session_file(
-            struct llama_context * ctx,
-                      const char * path_session,
-               const llama_token * tokens,
-                          size_t   n_token_count),
-        "use llama_state_save_file instead");
-
-    // Get the exact size needed to copy the state of a single sequence
-    LLAMA_API size_t llama_state_seq_get_size(
-            struct llama_context * ctx,
-                    llama_seq_id   seq_id);
-
-    // Copy the state of a single sequence into the specified buffer
-    LLAMA_API size_t llama_state_seq_get_data(
-            struct llama_context * ctx,
-                         uint8_t * dst,
-                          size_t   size,
-                    llama_seq_id   seq_id);
-
-    // Copy the sequence data (originally copied with `llama_state_seq_get_data`) into the specified sequence
-    // Returns:
-    //  - Positive: Ok
-    //  - Zero: Failed to load
-    LLAMA_API size_t llama_state_seq_set_data(
-            struct llama_context * ctx,
-                   const uint8_t * src,
-                          size_t   size,
-                    llama_seq_id   dest_seq_id);
-
-    LLAMA_API size_t llama_state_seq_save_file(
-            struct llama_context * ctx,
-                      const char * filepath,
-                    llama_seq_id   seq_id,
-               const llama_token * tokens,
-                          size_t   n_token_count);
-
-    LLAMA_API size_t llama_state_seq_load_file(
-            struct llama_context * ctx,
-                      const char * filepath,
-                    llama_seq_id   dest_seq_id,
-                     llama_token * tokens_out,
-                          size_t   n_token_capacity,
-                          size_t * n_token_count_out);
 
 // for backwards-compat
 #define LLAMA_STATE_SEQ_FLAGS_SWA_ONLY 1
@@ -886,25 +671,6 @@ extern "C" {
 #define LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY 1
 
     typedef uint32_t llama_state_seq_flags;
-
-    LLAMA_API size_t llama_state_seq_get_size_ext(
-            struct llama_context * ctx,
-                    llama_seq_id   seq_id,
-           llama_state_seq_flags   flags);
-
-    LLAMA_API size_t llama_state_seq_get_data_ext(
-            struct llama_context * ctx,
-                         uint8_t * dst,
-                          size_t   size,
-                    llama_seq_id   seq_id,
-           llama_state_seq_flags   flags);
-
-    LLAMA_API size_t llama_state_seq_set_data_ext(
-            struct llama_context * ctx,
-                   const uint8_t * src,
-                          size_t   size,
-                    llama_seq_id   dest_seq_id,
-           llama_state_seq_flags   flags);
 
     //
     // Decoding
@@ -950,7 +716,6 @@ extern "C" {
     // For encode-decoder contexts, processes the batch using the decoder.
     // Positive return values does not mean a fatal error, but rather a warning.
     // Upon fatal-error or abort, the ubatches that managed to be been processed will remain in the memory state of the context
-    //   To handle this correctly, query the memory state using llama_memory_seq_pos_min() and llama_memory_seq_pos_max()
     // Upon other return values, the memory state is restored to the state before this call
     //    0 - success
     //    1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
@@ -961,98 +726,14 @@ extern "C" {
             struct llama_context * ctx,
               struct llama_batch   batch);
 
-    // Set the number of threads used for decoding
-    // n_threads is the number of threads used for generation (single token)
-    // n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)
-    LLAMA_API void llama_set_n_threads(struct llama_context * ctx, int32_t n_threads, int32_t n_threads_batch);
-
-    // Get the number of threads used for generation of a single token.
-    LLAMA_API int32_t llama_n_threads(struct llama_context * ctx);
-
-    // Get the number of threads used for prompt and batch processing (multiple token).
-    LLAMA_API int32_t llama_n_threads_batch(struct llama_context * ctx);
-
-    // Set whether the context outputs embeddings or not
-    // TODO: rename to avoid confusion with llama_get_embeddings()
-    LLAMA_API void llama_set_embeddings(struct llama_context * ctx, bool embeddings);
-
-    // Set whether to use causal attention or not
-    // If set to true, the model will only attend to the past tokens
-    LLAMA_API void llama_set_causal_attn(struct llama_context * ctx, bool causal_attn);
-
-    // Set whether the model is in warmup mode or not
-    // If true, all model tensors are activated during llama_decode() to load and cache their weights.
-    LLAMA_API void llama_set_warmup(struct llama_context * ctx, bool warmup);
-
     // Set abort callback
     LLAMA_API void llama_set_abort_callback(struct llama_context * ctx, ggml_abort_callback abort_callback, void * abort_callback_data);
 
-    // Wait until all computations are finished
-    // This is automatically done when using one of the functions below to obtain the computation results
-    // and is not necessary to call it explicitly in most cases
-    LLAMA_API void llama_synchronize(struct llama_context * ctx);
-
-    // Token logits obtained from the last call to llama_decode()
-    // The logits for which llama_batch.logits[i] != 0 are stored contiguously
-    // in the order they have appeared in the batch.
-    // Rows: number of tokens for which llama_batch.logits[i] != 0
-    // Cols: n_vocab
-    // TODO: deprecate in favor of llama_get_logits_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
-    LLAMA_API float * llama_get_logits(struct llama_context * ctx);
-
     // Logits for the ith token. For positive indices, Equivalent to:
-    // llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab
+    // ctx->output_ids[i]*n_vocab
     // Negative indices can be used to access logits in reverse order, -1 is the last logit.
     // returns NULL for invalid ids.
     LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
-
-    // Get all output token embeddings.
-    // when pooling_type == LLAMA_POOLING_TYPE_NONE or when using a generative model,
-    // the embeddings for which llama_batch.logits[i] != 0 are stored contiguously
-    // in the order they have appeared in the batch.
-    // shape: [n_outputs*n_embd]
-    // Otherwise, returns NULL.
-    // TODO: deprecate in favor of llama_get_embeddings_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
-    LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
-
-    // Get the embeddings for the ith token. For positive indices, Equivalent to:
-    // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
-    // Negative indices can be used to access embeddings in reverse order, -1 is the last embedding.
-    // shape: [n_embd] (1-dimensional)
-    // returns NULL for invalid ids.
-    LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
-
-    // Get the embeddings for a sequence id
-    // Returns NULL if pooling_type is LLAMA_POOLING_TYPE_NONE
-    // when pooling_type == LLAMA_POOLING_TYPE_RANK, returns float[n_cls_out] with the rank(s) of the sequence
-    // otherwise: float[n_embd] (1-dimensional)
-    LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
-
-    //
-    // backend sampling API [EXPERIMENTAL]
-    // note: use only if the llama_context was created with at least one llama_sampler_seq_config
-    //
-
-    // Get the backend sampled token for the ith token.
-    // Returns LLAMA_TOKEN_NULL if no token was sampled.
-    LLAMA_API llama_token llama_get_sampled_token_ith(struct llama_context * ctx, int32_t i);
-
-    // Get the backend sampled probabilities for the ith token
-    // The index matches llama_get_sampled_token_ith().
-    // Returns NULL if no probabilities were generated.
-    LLAMA_API float *  llama_get_sampled_probs_ith      (struct llama_context * ctx, int32_t i);
-    LLAMA_API uint32_t llama_get_sampled_probs_count_ith(struct llama_context * ctx, int32_t i);
-
-    // Get the backend sampled logits for the ith token
-    // Returns NULL if no logits were sampled.
-    LLAMA_API float *  llama_get_sampled_logits_ith      (struct llama_context * ctx, int32_t i);
-    LLAMA_API uint32_t llama_get_sampled_logits_count_ith(struct llama_context * ctx, int32_t i);
-
-    // Get the backend sampled candidates (token ids) for the ith token
-    // These are needed to map probability/logit indices to vocab token ids.
-    // Returns NULL if no candidates were sampled.
-    LLAMA_API llama_token * llama_get_sampled_candidates_ith      (struct llama_context * ctx, int32_t i);
-    LLAMA_API uint32_t      llama_get_sampled_candidates_count_ith(struct llama_context * ctx, int32_t i);
 
     //
     // Vocab
@@ -1274,11 +955,6 @@ extern "C" {
 
         llama_sampler_context_t ctx;
     };
-
-    // [EXPERIMENTAL]
-    // attach a sampler to the context
-    // note: prefer initializing the context with llama_context_params.samplers when possible
-    LLAMA_API bool llama_set_sampler(struct llama_context * ctx, llama_seq_id seq_id, struct llama_sampler * smpl);
 
     // mirror of llama_sampler_i:
     LLAMA_API struct llama_sampler * llama_sampler_init  (      struct llama_sampler_i * iface, llama_sampler_context_t ctx);
@@ -1537,9 +1213,7 @@ extern "C" {
         int32_t n_sample;   // number of sampled tokens
     };
 
-    LLAMA_API struct llama_perf_context_data llama_perf_context      (const struct llama_context * ctx);
     LLAMA_API void                           llama_perf_context_print(const struct llama_context * ctx);
-    LLAMA_API void                           llama_perf_context_reset(      struct llama_context * ctx);
 
     // NOTE: the following work only with samplers constructed via llama_sampler_chain_init
     LLAMA_API struct llama_perf_sampler_data llama_perf_sampler      (const struct llama_sampler * chain);

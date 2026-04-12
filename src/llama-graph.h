@@ -506,4 +506,3 @@ struct llm_graph_context {
             ggml_tensor * dense_2_b,
             ggml_tensor * dense_3) const;
 };
-int32_t llama_relative_position_bucket(llama_pos x, llama_pos y, uint64_t n_buckets, bool bidirectional);
