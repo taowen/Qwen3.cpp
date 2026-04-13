@@ -1,0 +1,25 @@
+# Build outputs
+/build/
+/build-*/
+/out/
+/dist/
+
+# Python
+/.venv/
+__pycache__/
+*.pyc
+
+# Runtime artifacts (local only)
+/runtime/bin/*
+!/runtime/bin/.gitkeep
+/runtime/models/*
+!/runtime/models/.gitkeep
+/runtime/tokenizer/*
+!/runtime/tokenizer/.gitkeep
+/runtime/bench/*
+!/runtime/bench/.gitkeep
+/runtime/quick_run_*.log
+
+# Generic logs/temp
+*.log
+*.tmp
