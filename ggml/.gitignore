@@ -1,6 +1,0 @@
-# Local build artifacts under ggml/
-/build/
-/out/
-/CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
