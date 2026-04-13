@@ -15,7 +15,13 @@ Windows-focused repo for ExecuTorch-based Qwen3 workflow:
 
 ## Quick start
 
-1. Put runtime artifacts into:
+1. Setup Python env:
+
+```powershell
+.\scripts\setup_env.ps1 -Recreate
+```
+
+2. Put runtime artifacts into:
    - `runtime/bin/llama_main.exe`
    - `runtime/models/<model>.pte`
    - `runtime/tokenizer/tokenizer.json`
@@ -27,7 +33,7 @@ Windows-focused repo for ExecuTorch-based Qwen3 workflow:
 
 ## Export (dynamic-shape + SDPA with KV cache)
 
-Export uses external ExecuTorch workspace (default `C:\Apps\qwen3-export`):
+Export uses local `.venv` plus external ExecuTorch workspace source (default `C:\Apps\qwen3-export`):
 
 ```powershell
 .\scripts\export_sdpa_dynamic.ps1

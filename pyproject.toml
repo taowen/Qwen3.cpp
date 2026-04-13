@@ -1,0 +1,19 @@
+[project]
+name = "qwen3-cpp"
+version = "0.1.0"
+description = "Local workflow for Qwen3 export/runtime with vendored ExecuTorch runtime and Vulkan backend"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "torch",
+  "torchvision",
+  "torchaudio",
+  "executorch",
+  "torchao",
+  "transformers",
+  "accelerate",
+  "sentencepiece",
+  "safetensors",
+]
+
+[tool.uv]
+package = false

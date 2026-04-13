@@ -9,8 +9,8 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $upstreamRoot = Resolve-Path $ExecuTorchRepoRoot
 Set-Location $upstreamRoot
 
-$python = Join-Path $upstreamRoot '.venv\Scripts\python.exe'
-if (!(Test-Path $python)) { throw "Missing python: $python" }
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if (!(Test-Path $python)) { throw "Missing python: $python. Run scripts/setup_env.ps1 first." }
 
 $flatc = Join-Path $upstreamRoot ($BuildDir + '\third-party\flatc_ep\bin\flatc.exe')
 if (!(Test-Path $flatc)) { throw "Missing flatc: $flatc" }
