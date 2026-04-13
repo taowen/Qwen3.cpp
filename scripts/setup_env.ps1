@@ -1,20 +1,16 @@
 param(
-  [string]$PythonVersion = "3.11",
-  [switch]$Recreate
+  [string]$PythonVersion = "",
+  [switch]$Recreate,
+  [string]$ConfigPath = "",
+  [switch]$DryRun
 )
 
-$ErrorActionPreference = 'Stop'
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-Set-Location $repoRoot
+$driver = Join-Path $PSScriptRoot "qwen3.ps1"
+$forward = @{ Command = "env" }
+if ($PythonVersion) { $forward.PythonVersion = $PythonVersion }
+if ($Recreate) { $forward.Recreate = $true }
+if ($ConfigPath) { $forward.ConfigPath = $ConfigPath }
+if ($DryRun) { $forward.DryRun = $true }
 
-if ($Recreate -and (Test-Path '.venv')) {
-  Remove-Item -Recurse -Force '.venv'
-}
-
-uv venv .venv --python $PythonVersion
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-uv sync
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host "Environment ready: $repoRoot\.venv"
+& $driver @forward
+exit $LASTEXITCODE

@@ -13,18 +13,18 @@ Vendored runtime sources for custom C++ apps (chatbot, service wrappers, etc.).
 
 ```powershell
 cd C:\Apps\qwen3.cpp
-.\scripts\build_chatbot.ps1
+.\scripts\qwen3.ps1 chatbot-build
 ```
 
 ## Run
 
 ```powershell
 cd C:\Apps\qwen3.cpp
-.\scripts\run_chatbot.ps1
+.\scripts\qwen3.ps1 chatbot-run
 ```
 
 ## Notes
 
 - Export still uses `executorch.examples.models.llama.export_llama`.
 - Runtime app source is now local and editable.
-- If upstream runner changes, run `scripts/vendor_sync_runtime.ps1` to resync.
+- If upstream runner changes, run `.\scripts\qwen3.ps1 vendor-sync-runtime` to resync.

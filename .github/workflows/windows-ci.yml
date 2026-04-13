@@ -1,0 +1,43 @@
+name: windows-ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        shell: pwsh
+        run: uv sync --locked
+
+      - name: Prepare placeholder runtime artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force runtime/bin | Out-Null
+          New-Item -ItemType Directory -Force runtime/models | Out-Null
+          New-Item -ItemType Directory -Force runtime/tokenizer | Out-Null
+          New-Item -ItemType Directory -Force runtime/prompts | Out-Null
+          if (!(Test-Path runtime/bin/llama_main.exe)) { New-Item -ItemType File runtime/bin/llama_main.exe | Out-Null }
+          if (!(Test-Path runtime/models/qwen3_0_6b_vulkan_8da4w_kv_sdpa_dynamic.pte)) { New-Item -ItemType File runtime/models/qwen3_0_6b_vulkan_8da4w_kv_sdpa_dynamic.pte | Out-Null }
+          if (!(Test-Path runtime/tokenizer/tokenizer.json)) { '{}' | Set-Content runtime/tokenizer/tokenizer.json -Encoding UTF8 }
+          if (!(Test-Path runtime/prompts/perf_prompt.txt)) { 'Hello' | Set-Content runtime/prompts/perf_prompt.txt -Encoding UTF8 }
+
+      - name: Doctor checks
+        shell: pwsh
+        run: ./scripts/doctor.ps1 -SkipExternal
+
+      - name: Command dry-runs
+        shell: pwsh
+        run: |
+          ./scripts/qwen3.ps1 run -DryRun
+          ./scripts/qwen3.ps1 bench -DryRun
+          ./scripts/qwen3.ps1 baseline -DryRun

@@ -4,7 +4,7 @@ Vendored ExecuTorch sources used for local customization.
 
 ## Included now
 
-- `backends/vulkan/` (full backend snapshot, including shader GLSL and SPIR-V codegen script)
+- `backends/vulkan/` (curated backend subset used for shader/runtime work)
 
 Key shader paths:
 
@@ -16,18 +16,18 @@ Key shader paths:
 From repo root (`C:\Apps\qwen3.cpp`):
 
 ```powershell
-.\scripts\vendor_sync_vulkan.ps1 -Mode pull
+.\scripts\qwen3.ps1 vendor-sync-vulkan -Mode pull
 ```
 
 This refreshes vendor copy from external ExecuTorch source (default `C:\Apps\qwen3-export\third_party\executorch`).
 
-After editing vendored Vulkan sources, push back to build tree:
+After editing vendored Vulkan sources, push back to upstream tree:
 
 ```powershell
-.\scripts\vendor_sync_vulkan.ps1 -Mode push
+.\scripts\qwen3.ps1 vendor-sync-vulkan -Mode push
 ```
 
-Then rebuild ExecuTorch Vulkan LLM binaries from repo root:
+Then rebuild external ExecuTorch Vulkan LLM binaries from the external workspace:
 
 ```powershell
 cmake --build build\executorch-win-vulkan-llm-clangcl --config Release --target install -- /m

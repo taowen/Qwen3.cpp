@@ -1,12 +1,10 @@
 param(
-  [string]$ExecuTorchRoot = "",
   [string]$ConfigPath = "",
   [switch]$DryRun
 )
 
 $driver = Join-Path $PSScriptRoot "qwen3.ps1"
-$forward = @{ Command = "vendor-sync-runtime" }
-if ($ExecuTorchRoot) { $forward.ExecuTorchRoot = $ExecuTorchRoot }
+$forward = @{ Command = "baseline" }
 if ($ConfigPath) { $forward.ConfigPath = $ConfigPath }
 if ($DryRun) { $forward.DryRun = $true }
 

@@ -1,39 +1,26 @@
-﻿param(
-  [string]$Model = "qwen3_0_6b_vulkan_8da4w_kv_sdpa_dynamic.pte",
-  [int]$MaxNewTokens = 80,
-  [double]$Temperature = 0,
-  [switch]$IgnoreEos = $true,
+param(
+  [string]$Model = "",
+  [int]$MaxNewTokens = 0,
+  [double]$Temperature = [double]::NaN,
+  [switch]$IgnoreEos,
+  [switch]$NoIgnoreEos,
   [string]$PromptFile = "",
-  [string]$Prompt = ""
+  [string]$Prompt = "",
+  [string]$ConfigPath = "",
+  [switch]$DryRun
 )
 
-$ErrorActionPreference = 'Stop'
-$runtimeRoot = Resolve-Path (Join-Path $PSScriptRoot '..\runtime')
-$exe = Join-Path $runtimeRoot 'bin\llama_main.exe'
-$modelPath = Join-Path $runtimeRoot ("models\{0}" -f $Model)
-$tokenizerPath = Join-Path $runtimeRoot 'tokenizer\tokenizer.json'
+$driver = Join-Path $PSScriptRoot "qwen3.ps1"
+$forward = @{ Command = "run" }
+if ($Model) { $forward.Model = $Model }
+if ($MaxNewTokens -gt 0) { $forward.MaxNewTokens = $MaxNewTokens }
+if (![double]::IsNaN($Temperature)) { $forward.Temperature = $Temperature }
+if ($IgnoreEos) { $forward.IgnoreEos = $true }
+if ($NoIgnoreEos) { $forward.NoIgnoreEos = $true }
+if ($PromptFile) { $forward.PromptFile = $PromptFile }
+if ($Prompt) { $forward.Prompt = $Prompt }
+if ($ConfigPath) { $forward.ConfigPath = $ConfigPath }
+if ($DryRun) { $forward.DryRun = $true }
 
-if (!(Test-Path $exe)) { throw "Missing runner: $exe" }
-if (!(Test-Path $modelPath)) { throw "Missing model: $modelPath" }
-if (!(Test-Path $tokenizerPath)) { throw "Missing tokenizer: $tokenizerPath" }
-
-$args = @(
-  '--model_path', $modelPath,
-  '--tokenizer_path', $tokenizerPath,
-  '--temperature', $Temperature,
-  '--max_new_tokens', $MaxNewTokens
-)
-
-if ($IgnoreEos) { $args += '--ignore_eos' }
-
-if ($PromptFile -ne '') {
-  $args += @('--prompt_file', $PromptFile)
-} elseif ($Prompt -ne '') {
-  $args += @('--prompt', $Prompt)
-} else {
-  $defaultPrompt = Join-Path $runtimeRoot 'prompts\perf_prompt.txt'
-  $args += @('--prompt_file', $defaultPrompt)
-}
-
-& $exe @args
+& $driver @forward
 exit $LASTEXITCODE

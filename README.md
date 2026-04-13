@@ -1,67 +1,111 @@
 # Qwen3.cpp
 
-Windows-focused repo for ExecuTorch-based Qwen3 workflow:
+Refactored Windows workflow for Qwen3 + ExecuTorch Vulkan.
 
-- export uses upstream ExecuTorch (Python)
-- runtime app layer is vendored locally (C++)
-- Vulkan backend/shaders are vendored locally for custom optimization
+## Design
 
-## Repository layout
+- Single command entrypoint: `scripts/qwen3.ps1`
+- Centralized config: `config/default.psd1`
+- Runtime bundle is artifact-only: `runtime/`
+- Editable runtime app layer: `vendor-runtime/`
+- Editable Vulkan backend/shaders: `vendor-executorch/backends/vulkan/`
 
-- `scripts/`: export, pack, benchmark, sync, and chatbot helper scripts
-- `runtime/`: local runtime bundle workspace (`bin`, `models`, `tokenizer`, `prompts`)
-- `vendor-runtime/`: vendored runner/tokenizer/chatbot C++ app sources
-- `vendor-executorch/backends/vulkan/`: vendored ExecuTorch Vulkan backend + shaders
+## Repository Layout
 
-## Quick start
+- `config/`: default and environment-specific settings
+- `docs/`: baseline and architecture snapshots
+- `scripts/`: entrypoint, wrappers, health checks
+- `scripts/lib/`: shared PowerShell helpers
+- `runtime/`: local runtime artifacts (`bin`, `models`, `tokenizer`, `prompts`, `bench`)
+- `vendor-runtime/`: vendored C++ runtime app sources
+- `vendor-executorch/backends/vulkan/`: vendored ExecuTorch Vulkan backend subset
 
-1. Setup Python env:
+## Quick Start
+
+1. Setup environment:
 
 ```powershell
 .\scripts\setup_env.ps1 -Recreate
 ```
 
-2. Put runtime artifacts into:
-   - `runtime/bin/llama_main.exe`
-   - `runtime/models/<model>.pte`
-   - `runtime/tokenizer/tokenizer.json`
-2. Run:
+2. Validate environment:
 
 ```powershell
-.\scripts\run.ps1
+.\scripts\doctor.ps1 -SkipRuntimeArtifacts
 ```
 
-## Export (dynamic-shape + SDPA with KV cache)
-
-Export uses local `.venv` plus external ExecuTorch workspace source (default `C:\Apps\qwen3-export`):
+3. Export model from external ExecuTorch workspace:
 
 ```powershell
 .\scripts\export_sdpa_dynamic.ps1
 ```
 
-## Vendor runtime app build
+4. Pack runtime artifacts:
 
 ```powershell
-.\scripts\build_chatbot.ps1
-.\scripts\run_chatbot.ps1
+.\scripts\pack_runtime.ps1
 ```
 
-## Vendor sync helpers
+5. Run:
 
-- Sync llama runner/tokenizer from upstream ExecuTorch:
+```powershell
+.\scripts\run.ps1
+```
+
+## Unified Command
+
+All wrappers call `scripts/qwen3.ps1`:
+
+```powershell
+.\scripts\qwen3.ps1 env
+.\scripts\qwen3.ps1 doctor
+.\scripts\qwen3.ps1 export
+.\scripts\qwen3.ps1 pack
+.\scripts\qwen3.ps1 run
+.\scripts\qwen3.ps1 bench
+.\scripts\qwen3.ps1 chatbot-build
+.\scripts\qwen3.ps1 chatbot-run
+.\scripts\qwen3.ps1 vendor-sync-runtime
+.\scripts\qwen3.ps1 vendor-sync-vulkan -Mode pull
+.\scripts\qwen3.ps1 baseline
+```
+
+## Configuration
+
+Defaults are in `config/default.psd1`.
+
+Common overrides:
+
+- `Paths.ExecuTorchRepoRoot`
+- `Paths.ExecuTorchRoot`
+- `Paths.ExecuTorchInstallPrefix`
+- `Paths.TokenizerPath`
+- `Paths.DefaultModelArtifact`
+
+You can pass an alternate config file to any command:
+
+```powershell
+.\scripts\qwen3.ps1 run -ConfigPath .\config\my_machine.psd1
+```
+
+## Vendor Sync
+
+Runtime sync (from external ExecuTorch llama sources):
 
 ```powershell
 .\scripts\vendor_sync_runtime.ps1
 ```
 
-- Sync Vulkan backend:
+Vulkan sync:
 
 ```powershell
 .\scripts\vendor_sync_vulkan.ps1 -Mode pull
 .\scripts\vendor_sync_vulkan.ps1 -Mode push
 ```
 
+The pull mode keeps a curated Vulkan subset and prunes noisy directories.
+
 ## Notes
 
-- Large runtime artifacts are intentionally gitignored.
-- Keep model/tokenizer/runner binaries local under `runtime/` and do not commit them.
+- Runtime binaries/models/tokenizer files are gitignored.
+- `scripts/*.ps1` wrappers are compatibility shims; new logic lives in `scripts/qwen3.ps1`.
