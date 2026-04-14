@@ -19,6 +19,8 @@ __pycache__/
 /runtime/bench/*
 !/runtime/bench/.gitkeep
 /runtime/bench_compare*/
+/runtime/bench_tmp/
+/runtime/logs/
 /runtime/quick_run_*.log
 
 # Generic logs/temp

@@ -25,6 +25,9 @@ def _log(msg: str) -> None:
     print(f"[vk-py] {msg}")
 
 
+DEFAULT_VULKAN_BUFFER_LIMIT = 512 * 1024 * 1024
+
+
 def _quote(parts: Sequence[str]) -> str:
     out: List[str] = []
     for p in parts:
@@ -166,7 +169,6 @@ def _build_export_llama_args(
     model_id: str,
     quant_mode: str,
     group_size: int,
-    enable_vulkan: bool,
     enable_kv: bool,
     enable_sdpa_kv: bool,
 ) -> list[str]:
@@ -182,8 +184,7 @@ def _build_export_llama_args(
         "--output_name",
         output_name,
     ]
-    if enable_vulkan:
-        args.append("-V")
+    args.append("-V")
     if enable_kv:
         args.append("-kv")
     if enable_sdpa_kv:
@@ -216,6 +217,8 @@ import os
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+import executorch.backends.vulkan.utils as vk_utils
+from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.models.llama.export_llama_lib import build_args_parser, export_llama
 import executorch.examples.models.llama.export_llama_lib as export_llama_lib
 
@@ -236,6 +239,13 @@ compile_options = dict(payload.get("compile_options", {}))
 operator_blocklist = [_resolve_op_key(x) for x in payload.get("operator_blocklist", [])]
 operator_allowlist = [_resolve_op_key(x) for x in payload.get("operator_allowlist", [])]
 
+# Some Vulkan operator checks (e.g. embedding weight size) read this global limit.
+if "buffer_limit" in compile_options:
+    try:
+        vk_utils.DEFAULT_BUFFER_LIMIT = int(compile_options["buffer_limit"])
+    except Exception:
+        pass
+
 
 def _custom_get_vulkan_partitioner(dtype_override=None, enable_dynamic_shape=False, force_fp16=False):
     if dtype_override not in ("fp32", None):
@@ -254,8 +264,31 @@ def _custom_get_vulkan_partitioner(dtype_override=None, enable_dynamic_shape=Fal
 
 export_llama_lib.get_vulkan_partitioner = _custom_get_vulkan_partitioner
 
+
+def _strict_print_delegation_info(graph_module):
+    info = get_delegation_info(graph_module)
+    print(info.get_summary(), end="")
+    non_delegated = [
+        (k, v.non_delegated)
+        for k, v in info.delegation_by_operator.items()
+        if v.non_delegated > 0
+    ]
+    # `getitem` is a tuple/list plumbing op and not a compute kernel fallback.
+    non_delegated = [(k, v) for (k, v) in non_delegated if k != "getitem"]
+    if non_delegated:
+        non_delegated.sort(key=lambda x: x[1], reverse=True)
+        top = ", ".join(f"{k}:{v}" for k, v in non_delegated[:12])
+        raise RuntimeError(
+            "CPU fallback is forbidden: found non-delegated call_function nodes after Vulkan partition. "
+            f"non_delegated={sum(v for _, v in non_delegated)}; top_ops=[{top}]"
+        )
+
+
+export_llama_lib.print_delegation_info = _strict_print_delegation_info
+
 parser = build_args_parser()
 namespace = parser.parse_args(payload["export_args"])
+namespace.verbose = True
 export_llama(namespace)
 """
 
@@ -278,7 +311,6 @@ def _export_vulkan_pte(
     model_id: str,
     quant_mode: str,
     group_size: int,
-    enable_vulkan: bool,
     enable_kv: bool,
     enable_sdpa_kv: bool,
     dynamic_shader_manifest_path: Path | None,
@@ -295,6 +327,8 @@ def _export_vulkan_pte(
         raise RuntimeError(
             f"flatc not found at {flatc}. Build external ExecuTorch once before export."
         )
+    _ensure_upstream_custom_ops_lib(ctx, dry_run=dry_run)
+    _ensure_upstream_serialize_schema_files(ctx, dry_run=dry_run)
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = str(ctx.upstream_repo / "third_party")
@@ -305,7 +339,6 @@ def _export_vulkan_pte(
         model_id=model_id,
         quant_mode=quant_mode,
         group_size=group_size,
-        enable_vulkan=enable_vulkan,
         enable_kv=enable_kv,
         enable_sdpa_kv=enable_sdpa_kv,
     )
@@ -315,7 +348,9 @@ def _export_vulkan_pte(
         for x in export_llama_args
     ]
 
-    compile_options: dict[str, Any] = {}
+    compile_options: dict[str, Any] = {
+        "buffer_limit": DEFAULT_VULKAN_BUFFER_LIMIT,
+    }
     if dynamic_shader_manifest_path is not None:
         compile_options["dynamic_shader_manifest_path"] = str(
             dynamic_shader_manifest_path
@@ -324,29 +359,16 @@ def _export_vulkan_pte(
             clear_dynamic_shader_overlay
         )
 
-    if compile_options or operator_blocklist or operator_allowlist:
-        _log("Using patched Vulkan partitioner path for export_llama.")
-        _export_vulkan_pte_with_patched_partitioner(
-            ctx,
-            env=env,
-            export_llama_args=export_llama_args,
-            compile_options=compile_options,
-            operator_blocklist=operator_blocklist,
-            operator_allowlist=operator_allowlist,
-            dry_run=dry_run,
-        )
-    else:
-        _run(
-            [
-                str(ctx.venv_python),
-                "-m",
-                "executorch.examples.models.llama.export_llama",
-                *export_llama_args,
-            ],
-            cwd=ctx.upstream_repo,
-            env=env,
-            dry_run=dry_run,
-        )
+    _log("Using patched Vulkan partitioner export path (strict no-CPU-fallback).")
+    _export_vulkan_pte_with_patched_partitioner(
+        ctx,
+        env=env,
+        export_llama_args=export_llama_args,
+        compile_options=compile_options,
+        operator_blocklist=operator_blocklist,
+        operator_allowlist=operator_allowlist,
+        dry_run=dry_run,
+    )
     return ctx.upstream_repo / output_name
 
 
@@ -472,6 +494,111 @@ def _find_built_module(build_dir: Path, module_basename: str, py_tag: str) -> Pa
     if not matches:
         raise RuntimeError(f"Built module not found: {module_basename}.{py_tag}-win_amd64.pyd in {build_dir}")
     return matches[0]
+
+
+def _find_custom_ops_aot_lib(build_dir: Path) -> Path:
+    preferred = (
+        build_dir
+        / "extension"
+        / "llm"
+        / "custom_ops"
+        / "Release"
+        / "custom_ops_aot_lib.dll"
+    )
+    if preferred.exists():
+        return preferred
+    matches = list(build_dir.rglob("custom_ops_aot_lib.*"))
+    for match in matches:
+        if match.suffix.lower() in {".dll", ".so", ".dylib"}:
+            return match
+    raise RuntimeError(
+        f"Built custom ops library not found in {build_dir} (custom_ops_aot_lib.*)."
+    )
+
+
+def _ensure_upstream_custom_ops_lib(
+    ctx: Context,
+    *,
+    site_packages: Path | None = None,
+    dry_run: bool,
+) -> None:
+    upstream_custom_ops_dir = (
+        ctx.upstream_executorch / "extension" / "llm" / "custom_ops"
+    )
+    existing = list(upstream_custom_ops_dir.glob("*custom_ops_aot_lib.*"))
+    if existing:
+        return
+
+    candidates: list[Path] = []
+    if site_packages is not None:
+        candidates.extend(
+            [
+                site_packages
+                / "executorch"
+                / "extension"
+                / "llm"
+                / "custom_ops"
+                / "custom_ops_aot_lib.dll",
+                site_packages
+                / "executorch"
+                / "extension"
+                / "llm"
+                / "custom_ops"
+                / "libcustom_ops_aot_lib.so",
+                site_packages
+                / "executorch"
+                / "extension"
+                / "llm"
+                / "custom_ops"
+                / "libcustom_ops_aot_lib.dylib",
+            ]
+        )
+    if ctx.build_dir.exists():
+        try:
+            candidates.append(_find_custom_ops_aot_lib(ctx.build_dir))
+        except RuntimeError:
+            pass
+
+    src = next((p for p in candidates if p.exists()), None)
+    if src is None:
+        raise RuntimeError(
+            "Missing custom_ops_aot_lib in upstream ExecuTorch source tree. "
+            "Run `scripts/vk_pure_python.py bootstrap-vulkan --force-rebuild` first."
+        )
+
+    dst = upstream_custom_ops_dir / src.name
+    if dry_run:
+        _log(f"Would install upstream custom ops lib: {src} -> {dst}")
+        return
+    _copy_binary_with_retry(src, dst)
+    _log(f"Installed upstream custom ops lib: {dst}")
+
+
+def _ensure_upstream_serialize_schema_files(ctx: Context, *, dry_run: bool) -> None:
+    target_dir = ctx.upstream_executorch / "exir" / "_serialize"
+    required = ["program.fbs", "scalar_type.fbs"]
+    missing = [name for name in required if not (target_dir / name).exists()]
+    if not missing:
+        return
+
+    py_info = _query_python_env(ctx.venv_python)
+    site_packages = Path(str(py_info["site_packages"]))
+    source_dir = site_packages / "executorch" / "exir" / "_serialize"
+
+    for name in missing:
+        src = source_dir / name
+        dst = target_dir / name
+        if not src.exists():
+            raise RuntimeError(
+                f"Missing required schema resource: {src}. "
+                "Cannot hydrate upstream ExecuTorch serialize schemas."
+            )
+        if dry_run:
+            _log(f"Would install serialize schema: {src} -> {dst}")
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        _log(f"Installed serialize schema: {dst}")
 
 
 def _resolve_cmake_executable() -> str:
@@ -776,24 +903,47 @@ def _bootstrap_vulkan_pybind_cmake(
         "--",
         "/m",
     ]
+    build_custom_ops_cmd = [
+        cmake_exe,
+        "--build",
+        str(build_dir),
+        "--config",
+        "Release",
+        "--target",
+        "custom_ops_aot_lib",
+        "--",
+        "/m",
+    ]
 
     _run(configure_cmd, cwd=ctx.upstream_executorch, dry_run=dry_run)
     _run(build_portable_cmd, cwd=ctx.upstream_executorch, dry_run=dry_run)
     _run(build_data_loader_cmd, cwd=ctx.upstream_executorch, dry_run=dry_run)
+    _run(build_custom_ops_cmd, cwd=ctx.upstream_executorch, dry_run=dry_run)
 
     if dry_run:
         return
 
     portable_src = _find_built_module(build_dir, "_portable_lib", py_tag)
     data_loader_src = _find_built_module(build_dir, "data_loader", py_tag)
+    custom_ops_src = _find_custom_ops_aot_lib(build_dir)
 
     dst_dir = site_packages / "executorch" / "extension" / "pybindings"
     dst_dir.mkdir(parents=True, exist_ok=True)
 
     _copy_binary_with_retry(portable_src, dst_dir / portable_src.name)
     _copy_binary_with_retry(data_loader_src, dst_dir / data_loader_src.name)
+    custom_ops_dst = (
+        site_packages
+        / "executorch"
+        / "extension"
+        / "llm"
+        / "custom_ops"
+        / custom_ops_src.name
+    )
+    _copy_binary_with_retry(custom_ops_src, custom_ops_dst)
 
     _sync_python_overlays(ctx, site_packages=site_packages, dry_run=dry_run)
+    _ensure_upstream_custom_ops_lib(ctx, site_packages=site_packages, dry_run=dry_run)
 
     verify_cmd = [
         str(ctx.venv_python),
@@ -815,6 +965,9 @@ def _bootstrap_vulkan_pybind(args: argparse.Namespace) -> int:
     site_packages = Path(str(py_info["site_packages"]))
     if (not args.force_rebuild) and _has_vulkan_backend(ctx.venv_python):
         _sync_python_overlays(ctx, site_packages=site_packages, dry_run=args.dry_run)
+        _ensure_upstream_custom_ops_lib(
+            ctx, site_packages=site_packages, dry_run=args.dry_run
+        )
         _verify_python_overlays(ctx, dry_run=args.dry_run)
         _log("VulkanBackend is already available in current Python runtime; skipping rebuild.")
         return 0
@@ -852,7 +1005,7 @@ def _pipeline(args: argparse.Namespace) -> int:
         _log(f"Vulkan operator blocklist: {op_blocklist}")
     if op_allowlist:
         _log(f"Vulkan operator allowlist: {op_allowlist}")
-    if not args.allow_non_vulkan and not _has_vulkan_backend(ctx.venv_python):
+    if not _has_vulkan_backend(ctx.venv_python):
         raise RuntimeError(
             "Python runtime has no VulkanBackend. Run `bootstrap-vulkan` first."
         )
@@ -864,7 +1017,6 @@ def _pipeline(args: argparse.Namespace) -> int:
         model_id=args.model_id or ctx.default_model_id,
         quant_mode=args.quant_mode,
         group_size=args.group_size,
-        enable_vulkan=not args.no_vulkan,
         enable_kv=enable_kv,
         enable_sdpa_kv=enable_sdpa_kv,
         dynamic_shader_manifest_path=shader_manifest,
@@ -927,8 +1079,6 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--quant-mode", default="8da4w")
     run.add_argument("--group-size", type=int, default=128)
     run.add_argument("--fusion-profile", choices=["none", "kv", "sdpa_kv"], default="sdpa_kv")
-    run.add_argument("--no-vulkan", action="store_true")
-    run.add_argument("--allow-non-vulkan", action="store_true")
     run.add_argument("--shader-manifest", default="")
     run.add_argument("--keep-dynamic-shader-overlay", action="store_true")
     run.add_argument(
