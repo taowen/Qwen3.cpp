@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true, Position = 0)]
-  [ValidateSet("baseline", "env", "doctor", "export", "pack", "run", "bench", "chatbot-build", "chatbot-run", "vendor-sync-runtime", "vendor-sync-vulkan")]
+  [ValidateSet("baseline", "env", "doctor", "export", "pack", "run", "bench", "bench-compare", "chatbot-build", "chatbot-run", "vendor-sync-runtime", "vendor-sync-vulkan")]
   [string]$Command,
 
   [string]$ConfigPath = "",
@@ -17,6 +17,7 @@ param(
   [switch]$NoIgnoreEos,
   [string]$PromptFile = "",
   [string]$Prompt = "",
+  [string]$OutDir = "",
 
   [string]$BuildDir = "",
   [string]$ExecuTorchRepoRoot = "",
@@ -425,6 +426,29 @@ switch ($Command) {
     $summary | Format-List
     Write-Host "runs=$runsCsv"
     Write-Host "summary=$summaryCsv"
+    break
+  }
+
+  "bench-compare" {
+    $perfScript = Join-Path $repoRoot "scripts\perf_compare.ps1"
+    Require-Path -Path $perfScript -Description "perf compare script"
+
+    $forward = @{}
+    if ($ConfigPath) { $forward.ConfigPath = $ConfigPath }
+    if ($Runs -gt 0) { $forward.Runs = $Runs }
+    if ($MaxNewTokens -gt 0) { $forward.MaxNewTokens = $MaxNewTokens }
+    if (![double]::IsNaN($Temperature)) { $forward.Temperature = $Temperature }
+    if ($PromptFile) { $forward.PromptFile = $PromptFile }
+    if ($OutDir) { $forward.OutDir = $OutDir }
+
+    if ($DryRun) {
+      Write-Step "DryRun: $perfScript"
+    } else {
+      & $perfScript @forward
+      if ($LASTEXITCODE -ne 0) {
+        throw "bench-compare failed with exit code $LASTEXITCODE"
+      }
+    }
     break
   }
 

@@ -286,6 +286,9 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     compile_specs = []
 
     for key, value in compile_options.items():
+        if isinstance(value, str):
+            compile_specs.append(CompileSpec(key, value.encode("utf-8")))
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))

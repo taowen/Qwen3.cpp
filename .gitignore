@@ -18,8 +18,12 @@ __pycache__/
 !/runtime/tokenizer/.gitkeep
 /runtime/bench/*
 !/runtime/bench/.gitkeep
+/runtime/bench_compare*/
 /runtime/quick_run_*.log
 
 # Generic logs/temp
 *.log
 *.tmp
+
+# Local isolated upstream clone
+/upstream/

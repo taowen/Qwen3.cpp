@@ -1,0 +1,130 @@
+﻿diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1f44b65..ae8cce9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1064,6 +1064,17 @@ if(EXECUTORCH_BUILD_PYBIND)
+   target_compile_definitions(
+     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
+   )
++  if(EXECUTORCH_BUILD_VULKAN)
++    target_compile_definitions(
++      portable_lib PRIVATE EXECUTORCH_PYBIND_HAS_VULKAN=1
++    )
++    target_include_directories(
++      portable_lib
++      PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan/third-party/Vulkan-Headers/include
++        ${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan/third-party/volk
++    )
++  endif()
+   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
+diff --git a/extension/pybindings/portable_lib.py b/extension/pybindings/portable_lib.py
+index 4be4b89..c123f9d 100644
+--- a/extension/pybindings/portable_lib.py
++++ b/extension/pybindings/portable_lib.py
+@@ -79,11 +79,13 @@ if sys.platform == "win32":
+ # Note that all of these are experimental, and subject to change without notice.
+ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+     # Disable "imported but unused" (F401) checks.
++    _clear_vk_shader_overlay,  # noqa: F401
+     _create_profile_block,  # noqa: F401
+     _dump_profile_results,  # noqa: F401
+     _get_operator_names,  # noqa: F401
+     _get_registered_backend_names,  # noqa: F401
+     _is_available,  # noqa: F401
++    _load_vk_shader_override_manifest,  # noqa: F401
+     _load_bundled_program_from_buffer,  # noqa: F401
+     _load_for_executorch,  # noqa: F401
+     _load_for_executorch_from_buffer,  # noqa: F401
+diff --git a/extension/pybindings/pybindings.cpp b/extension/pybindings/pybindings.cpp
+index 684a345..0e69eff 100644
+--- a/extension/pybindings/pybindings.cpp
++++ b/extension/pybindings/pybindings.cpp
+@@ -51,6 +51,10 @@
+ #include <executorch/extension/aten_util/aten_bridge.h>
+ #endif
+ 
++#if defined(EXECUTORCH_PYBIND_HAS_VULKAN)
++#include <executorch/backends/vulkan/runtime/api/ShaderPackLoader.h>
++#endif
++
+ /// Throws a runtime_error with the provided message if `error` is not `Ok`.
+ #define THROW_IF_ERROR(error, message, ...)                       \
+   ({                                                              \
+@@ -1510,6 +1514,29 @@ py::list get_registered_backend_names() {
+   return res;
+ }
+ 
++void load_vk_shader_override_manifest(
++    const std::string& manifest_path,
++    bool clear_existing_overlay) {
++#if defined(EXECUTORCH_PYBIND_HAS_VULKAN)
++  vkcompute::api::load_shader_override_manifest(
++      manifest_path, clear_existing_overlay);
++#else
++  (void)manifest_path;
++  (void)clear_existing_overlay;
++  throw std::runtime_error(
++      "Vulkan backend is not enabled in this portable_lib build.");
++#endif
++}
++
++void clear_vk_shader_overlay() {
++#if defined(EXECUTORCH_PYBIND_HAS_VULKAN)
++  vkcompute::api::clear_shader_pack_overlay();
++#else
++  throw std::runtime_error(
++      "Vulkan backend is not enabled in this portable_lib build.");
++#endif
++}
++
+ py::bool_ is_available(const std::string& backend_name) {
+   BackendInterface* backend = get_backend_class(backend_name.c_str());
+   if (backend == nullptr) {
+@@ -1605,6 +1632,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
+       "_get_registered_backend_names",
+       &get_registered_backend_names,
+       call_guard);
++  m.def(
++      "_load_vk_shader_override_manifest",
++      &load_vk_shader_override_manifest,
++      py::arg("manifest_path"),
++      py::arg("clear_existing_overlay") = true,
++      call_guard);
++  m.def("_clear_vk_shader_overlay", &clear_vk_shader_overlay, call_guard);
+   m.def("_get_operator_names", &get_operator_names);
+   m.def("_is_available", &is_available, py::arg("backend_name"), call_guard);
+   m.def("_create_profile_block", &create_profile_block, call_guard);
+diff --git a/extension/pybindings/pybindings.pyi b/extension/pybindings/pybindings.pyi
+index 54fa23f..4911433 100644
+--- a/extension/pybindings/pybindings.pyi
++++ b/extension/pybindings/pybindings.pyi
+@@ -347,6 +347,26 @@ def _get_registered_backend_names() -> List[str]:
+     """
+     ...
+ 
++@experimental("This API is experimental and subject to change without notice.")
++def _load_vk_shader_override_manifest(
++    manifest_path: str, clear_existing_overlay: bool = True
++) -> None:
++    """
++    .. warning::
++
++        This API is experimental and subject to change without notice.
++    """
++    ...
++
++@experimental("This API is experimental and subject to change without notice.")
++def _clear_vk_shader_overlay() -> None:
++    """
++    .. warning::
++
++        This API is experimental and subject to change without notice.
++    """
++    ...
++
+ @experimental("This API is experimental and subject to change without notice.")
+ def _create_profile_block(name: str) -> None:
+     """

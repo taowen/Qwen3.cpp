@@ -10,6 +10,7 @@
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
+#include <executorch/backends/vulkan/runtime/api/ShaderPackLoader.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -31,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib> /* strtol */
 #include <cstring>
+#include <string>
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
@@ -202,6 +204,58 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
   config.enable_querypool = true;
 #endif // ET_EVENT_TRACER_ENABLED
   return config;
+}
+
+std::string get_compile_spec_string(
+    ArrayRef<CompileSpec>& compile_specs,
+    const char* key) {
+  for (const CompileSpec& spec : compile_specs) {
+    if (strcmp(spec.key, key) != 0) {
+      continue;
+    }
+    const char* ptr = reinterpret_cast<const char*>(spec.value.buffer);
+    std::string value(ptr, ptr + spec.value.nbytes);
+    while (!value.empty() && value.back() == '\0') {
+      value.pop_back();
+    }
+    return value;
+  }
+  return "";
+}
+
+bool get_compile_spec_bool_or_default(
+    ArrayRef<CompileSpec>& compile_specs,
+    const char* key,
+    bool default_value) {
+  for (const CompileSpec& spec : compile_specs) {
+    if (strcmp(spec.key, key) != 0) {
+      continue;
+    }
+    const uint8_t* value_data = (const uint8_t*)spec.value.buffer;
+    ET_CHECK_MSG(spec.value.nbytes == sizeof(uint8_t), "Unexpected value size!");
+    return getBool(value_data);
+  }
+  return default_value;
+}
+
+void maybe_load_dynamic_shader_manifest(ArrayRef<CompileSpec>& compile_specs) {
+  const std::string manifest_path = get_compile_spec_string(
+      compile_specs, "dynamic_shader_manifest_path");
+
+  const bool has_manifest = !manifest_path.empty();
+  const bool clear_overlay_first = get_compile_spec_bool_or_default(
+      compile_specs, "clear_dynamic_shader_overlay", has_manifest);
+
+  if (clear_overlay_first) {
+    api::clear_shader_pack_overlay();
+  }
+  if (!has_manifest) {
+    return;
+  }
+
+  // Overlay has already been cleared above if requested.
+  api::load_shader_override_manifest(
+      manifest_path, /*clear_existing_overlay=*/false);
 }
 
 class GraphBuilder {
@@ -647,6 +701,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     GraphConfig graph_config = get_graph_config(compile_specs);
     graph_config.external_adapter = vkapi::set_and_get_external_adapter();
     new (compute_graph) ComputeGraph(graph_config);
+
+    maybe_load_dynamic_shader_manifest(compile_specs);
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
     Error err = compileModel(processed->data(), compute_graph, named_data_map);

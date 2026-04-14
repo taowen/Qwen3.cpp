@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/ShaderPackLoader.h>
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
